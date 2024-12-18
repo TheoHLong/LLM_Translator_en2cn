@@ -2,14 +2,14 @@
 Models package for handling LLM interactions and text preprocessing.
 """
 
-from models.ollama import OllamaService
-from models.text_processing import TextPreprocessor
-from models.response_handler import ResponseHandler
+from .ollama import OllamaService
+from .text_processing import TextPreprocessor
+from .response_handler import ResponseHandler
 
 __all__ = [
     'OllamaService',
     'TextPreprocessor',
-    'ResponseHandler',
+    'ResponseHandler'
 ]
 
 # Version info
