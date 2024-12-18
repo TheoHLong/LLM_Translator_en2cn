@@ -1,4 +1,10 @@
 import os
+import sys
+
+# Add the project root directory to Python path
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(root_dir)
+
 import re
 from typing import Optional, Dict, Any
 from pywebio.input import *
@@ -9,33 +15,19 @@ import logging
 from pywebio.platform.aiohttp import start_server
 import time
 from tqdm import tqdm
-import sys
-
-# Add the project root directory to Python path
-root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(root_dir)
 
 # Import our modules
-from models import (
-    OllamaService,
-    TextPreprocessor,
-    ResponseHandler
-)
+from models.ollama import OllamaService  
+from models.text_processing import TextPreprocessor
+from services.translation_service import TranslationService, TranslationConfig
+from services.content_summarizer import ContentSummarizer, SummaryConfig
+from utils.file_handlers import FileHandler, FileConfig
+from utils.text_utils import TextUtils, TextConfig
+
 from services import (
-    DocumentParser,
-    TranslationService,
-    ContentSummarizer,
-    TranslationConfig,
-    SummaryConfig,
     DEFAULT_TRANSLATION_CONFIG,
     DEFAULT_SUMMARY_CONFIG,
     PROCESSING_MODES
-)
-from utils import (
-    FileHandler,
-    TextUtils,
-    FileConfig,
-    TextConfig
 )
 
 class DocumentTranslatorApp:
