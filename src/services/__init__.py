@@ -1,5 +1,5 @@
 """
-Services package for core application functionalities.
+Services package for document translation and processing.
 """
 
 from .document_parser import DocumentParser
@@ -11,10 +11,10 @@ __all__ = [
     'TranslationService',
     'TranslationConfig',
     'ContentSummarizer',
-    'SummaryConfig',
+    'SummaryConfig'
 ]
 
-# Service configurations
+# Default configurations
 DEFAULT_TRANSLATION_CONFIG = {
     'max_tokens': 4700,
     'model_name': 'wangshenzhi/gemma2-9b-chinese-chat',
@@ -26,14 +26,6 @@ DEFAULT_SUMMARY_CONFIG = {
     'chunk_size': 500,
     'delay': 2
 }
-
-# Default prompts
-DEFAULT_SUMMARY_PROMPT = """
-Summarize the passage in one clear and intuitive paragraph, focusing on the central theme 
-and essential details without using introductory phrases.
-"""
-
-DEFAULT_TRANSLATION_PROMPT = "忠实且自然地把下面内容翻译成中文，并只输出翻译后的文字："
 
 # Processing modes
 PROCESSING_MODES = {
