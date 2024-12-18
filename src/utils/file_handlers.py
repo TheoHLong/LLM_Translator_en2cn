@@ -8,7 +8,6 @@ from dataclasses import dataclass
 import PyPDF2
 import mammoth
 from bs4 import BeautifulSoup
-import srt
 import re
 from deep_translator import GoogleTranslator
 from langdetect import detect
@@ -18,15 +17,14 @@ from models.text_processing import TextPreprocessor
 class FileConfig:
     """Configuration settings for file handling."""
     temp_directory: str = 'temp'
-    allowed_extensions: tuple = ('.pdf', '.docx', '.txt', '.srt', '.html')
+    allowed_extensions: tuple = ('.pdf', '.docx', '.txt', '.html')  # Removed .srt
     max_file_size: int = 100 * 1024 * 1024  # 100MB
     mime_types = {
         'pdf': 'application/pdf',
         'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'doc': 'application/msword',
         'txt': 'text/plain',
-        'html': 'text/html',
-        'srt': 'application/x-subrip'
+        'html': 'text/html'
     }
 
 class FileHandler:
@@ -78,67 +76,6 @@ class FileHandler:
         with open(file_path, "wb") as saved_file:
             saved_file.write(file['content'])
         return file_path
-
-    def process_subtitles(
-        self,
-        file_path: str,
-        translator: Any,
-        stone_mode: str,
-        source_lang: str,
-        target_lang: str,
-        country: str
-    ) -> None:
-        """
-        Process and translate subtitle file.
-        
-        Args:
-            file_path (str): Path to subtitle file
-            translator: Translation service instance
-            stone_mode (str): Processing mode
-            source_lang (str): Source language
-            target_lang (str): Target language
-            country (str): Target country
-        """
-        from pywebio.output import put_text, put_loading, put_row
-        
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                srt_content = f.read()
-        except UnicodeDecodeError:
-            with open(file_path, 'r', encoding='utf-16') as f:
-                srt_content = f.read()
-
-        subtitle_generator = srt.parse(srt_content)
-        subtitles = list(subtitle_generator)
-
-        for subtitle in subtitles:
-            content = subtitle.content
-            
-            # Skip if content is too short or empty
-            if len(content.strip()) < 2:
-                continue
-                
-            # Translate content
-            with put_loading(shape='border', color='info'):
-                if stone_mode == '信息提取':
-                    translated_text = translator.fast_translate(content)
-                else:
-                    translated_text = translator.translate(
-                        source_lang=source_lang,
-                        target_lang=target_lang,
-                        source_text=content,
-                        country=country
-                    )
-                
-                time_str = f"{subtitle.start} --> {subtitle.end}"
-                put_row([
-                    put_text(f"{subtitle.index}\n{time_str}\n{content}"),
-                    None,
-                    put_text(translated_text)
-                ])
-
-        # Clean up
-        os.remove(file_path)
 
     def validate_file(self, file: Dict[str, Any]) -> bool:
         """
