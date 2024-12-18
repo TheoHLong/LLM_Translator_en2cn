@@ -2,9 +2,9 @@
 Services package for core application functionalities.
 """
 
-from services.document_parser import DocumentParser
-from services.translator import TranslationService, TranslationConfig
-from services.summarizer import ContentSummarizer, SummaryConfig
+from .document_parser import DocumentParser
+from .translation_service import TranslationService, TranslationConfig
+from .content_summarizer import ContentSummarizer, SummaryConfig
 
 __all__ = [
     'DocumentParser',
@@ -13,9 +13,6 @@ __all__ = [
     'ContentSummarizer',
     'SummaryConfig',
 ]
-
-# Version info
-__version__ = '1.0.0'
 
 # Service configurations
 DEFAULT_TRANSLATION_CONFIG = {

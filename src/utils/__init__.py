@@ -2,8 +2,8 @@
 Utilities package for helper functions and common operations.
 """
 
-from utils.file_handlers import FileHandler, FileConfig
-from utils.text_utils import TextUtils, TextConfig
+from .file_handlers import FileHandler, FileConfig
+from .text_utils import TextUtils, TextConfig
 
 __all__ = [
     'FileHandler',
@@ -12,8 +12,6 @@ __all__ = [
     'TextConfig',
 ]
 
-# Version info
-__version__ = '1.0.0'
 
 # File configurations
 DEFAULT_FILE_CONFIG = {
@@ -40,13 +38,3 @@ DEFAULT_TEXT_CONFIG = {
     'title_max_chars': 200,
     'title_min_chars': 6
 }
-
-# Common utility functions
-def get_version():
-    """Get the current version of the utilities package."""
-    return __version__
-
-def is_development():
-    """Check if running in development environment."""
-    import os
-    return os.getenv('ENVIRONMENT') == 'development'

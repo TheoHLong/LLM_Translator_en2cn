@@ -2,20 +2,16 @@
 Models package for handling LLM interactions and text preprocessing.
 """
 
+
 from .ollama import OllamaService
 from .text_processing import TextPreprocessor
-from .response_handler import ResponseHandler
 
 __all__ = [
     'OllamaService',
-    'TextPreprocessor',
-    'ResponseHandler'
+    'TextPreprocessor'
 ]
 
-# Version info
-__version__ = '1.0.0'
-
-# Default configuration
+# Default models
 DEFAULT_MODELS = {
     'summary': 'llama3.2',
     'translation': 'wangshenzhi/gemma2-9b-chinese-chat'
