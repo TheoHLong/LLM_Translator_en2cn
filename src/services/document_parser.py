@@ -28,6 +28,18 @@ class DocumentParser:
         self.s2_api_url = 'https://partner.semanticscholar.org/graph/v1'
         self.sch = SemanticScholar(api_key=self.s2_api_key, api_url=self.s2_api_url)
 
+    def get_document_metadata(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Public method to get document metadata from a PDF file.
+        
+        Args:
+            file_path (str): Path to PDF file
+            
+        Returns:
+            Optional[Dict[str, Any]]: Document metadata if found, None otherwise
+        """
+        return self._get_paper_metadata(file_path)
+
     def init_selenium_driver(self) -> webdriver.Chrome:
         """Initialize Selenium WebDriver with appropriate options."""
         options = webdriver.ChromeOptions()

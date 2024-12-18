@@ -196,9 +196,9 @@ class TextPreprocessor:
         """Extract title from PDF metadata or content."""
         # Try metadata first
         with open(filename, "rb") as f:
-            docinfo = PdfReader(f).getDocumentInfo()
-            if docinfo and docinfo.title:
-                title = docinfo.title
+            pdf = PdfReader(f)
+            if pdf.metadata and pdf.metadata.get('/Title'):
+                title = pdf.metadata.get('/Title')
                 if self._valid_title(title):
                     return title
 
