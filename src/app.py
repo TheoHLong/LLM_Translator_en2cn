@@ -21,6 +21,7 @@ from models.ollama import OllamaService
 from models.text_processing import TextPreprocessor
 from services.translation_service import TranslationService, TranslationConfig
 from services.summarizer import ContentSummarizer, SummaryConfig
+from services.document_parser import DocumentParser  # Added this import
 from utils.file_handlers import FileHandler, FileConfig
 from utils.text_utils import TextUtils, TextConfig
 
@@ -87,7 +88,7 @@ class DocumentTranslatorApp:
                     [PROCESSING_MODES['EXTRACT'], PROCESSING_MODES['TRANSLATE']],
                     inline=True,
                     required=True,
-                    value=[PROCESSING_MODES['EXTRACT']],
+                    value=PROCESSING_MODES['EXTRACT'],
                     help_text='',
                     )
 
