@@ -21,7 +21,7 @@ from models.ollama import OllamaService
 from models.text_processing import TextPreprocessor
 from services.translation_service import TranslationService, TranslationConfig
 from services.summarizer import ContentSummarizer, SummaryConfig
-from services.document_parser import DocumentParser  # Added this import
+from services.document_parser import DocumentParser
 from utils.file_handlers import FileHandler, FileConfig
 from utils.text_utils import TextUtils, TextConfig
 
@@ -30,6 +30,12 @@ from services import (
     DEFAULT_SUMMARY_CONFIG,
     PROCESSING_MODES
 )
+
+@config(title="石头网络")
+def start_app():
+    """Main application entry point."""
+    app = DocumentTranslatorApp()
+    app.start()
 
 class DocumentTranslatorApp:
     """Main application class for document translation and summarization."""
@@ -59,10 +65,8 @@ class DocumentTranslatorApp:
             'country': 'China'
         }
 
-    @config(title="石头网络")
     def start(self):
         """Start the web application."""
-
         # Display header information
         self._display_header()
 
@@ -215,12 +219,9 @@ def main():
             print(f"Pulling required models...")
             ollama.pull_models()
 
-        # Start the application
-        app = DocumentTranslatorApp()
-        
         # Start the server
         start_server(
-            app.start,
+            start_app,  # Changed from app.start to start_app
             port=8501,
             debug=True,
             cdn=False,
