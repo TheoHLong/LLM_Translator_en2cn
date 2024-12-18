@@ -20,7 +20,7 @@ from tqdm import tqdm
 from models.ollama import OllamaService  
 from models.text_processing import TextPreprocessor
 from services.translation_service import TranslationService, TranslationConfig
-from services.content_summarizer import ContentSummarizer, SummaryConfig
+from services.summarizer import ContentSummarizer, SummaryConfig
 from utils.file_handlers import FileHandler, FileConfig
 from utils.text_utils import TextUtils, TextConfig
 
