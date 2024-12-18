@@ -58,11 +58,16 @@ class DocumentTranslatorApp:
 
         # Configuration for languages
         self.language_config = {
-            'in_lang': 'en',
-            'out_lang': 'zh',
             'source_lang': 'English',
             'target_lang': 'Chinese',
             'country': 'China'
+        }
+        
+        # Additional language configuration for HTML content
+        self.html_language_config = {
+            'in_lang': 'en',
+            'out_lang': 'zh',
+            **self.language_config
         }
 
     def start(self):
@@ -159,7 +164,7 @@ class DocumentTranslatorApp:
 
         self.summarizer.process_html_content(
             soup=soup,
-            **self.language_config,
+            **self.html_language_config,
             stone_mode=stone_mode,
             translator=self.translator
         )
@@ -173,7 +178,7 @@ class DocumentTranslatorApp:
 
         self.summarizer.process_html_content(
             soup=soup,
-            **self.language_config,
+            **self.html_language_config,
             stone_mode=stone_mode,
             translator=self.translator
         )
@@ -187,7 +192,7 @@ class DocumentTranslatorApp:
         put_success('实时翻译中 ...  ')
         self.summarizer.process_html_content(
             soup=soup,
-            **self.language_config,
+            **self.html_language_config,
             stone_mode=stone_mode,
             translator=self.translator
         )
@@ -203,7 +208,7 @@ class DocumentTranslatorApp:
             text=text,
             stone_mode=stone_mode,
             translator=self.translator,
-            **self.language_config
+            **self.language_config  # Using base language config without in_lang/out_lang
         )
         put_success("翻译完成")
 
@@ -221,7 +226,7 @@ def main():
 
         # Start the server
         start_server(
-            start_app,  # Changed from app.start to start_app
+            start_app,
             port=8501,
             debug=True,
             cdn=False,
