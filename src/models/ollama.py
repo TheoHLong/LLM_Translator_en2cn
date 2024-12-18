@@ -2,6 +2,8 @@ import subprocess
 import requests
 import json
 import time
+import platform
+import os
 from typing import Optional, Union, Dict, Any, List
 from tqdm import tqdm
 import tiktoken
@@ -9,14 +11,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 class OllamaService:
     """Handles all Ollama-related operations including translation and summarization."""
-    """
-    Initialize OllamaService with specified models.
     
-    Args:
-        summary_model (str): Model to use for summarization
-        translation_model (str): Model to use for translation
-        max_tokens (int): Maximum tokens per request
-    """
     def __init__(self):
         self.summary_model = "llama3.2"
         self.translation_model = "wangshenzhi/gemma2-9b-chinese-chat"
@@ -25,10 +20,73 @@ class OllamaService:
         self.models_pulled = False
         self.process = None
 
+    def is_ollama_installed(self) -> bool:
+        """Check if Ollama is installed."""
+        try:
+            subprocess.run(["ollama", "--version"], 
+                         stdout=subprocess.PIPE, 
+                         stderr=subprocess.PIPE)
+            return True
+        except FileNotFoundError:
+            return False
+
+    def install_ollama(self) -> bool:
+        """Install Ollama based on the operating system."""
+        system = platform.system().lower()
+        
+        try:
+            if system == "darwin":  # macOS
+                print("Installing Ollama for macOS...")
+                install_script = """
+                curl -fsSL https://ollama.ai/install.sh -o install.sh
+                chmod +x install.sh
+                ./install.sh
+                rm install.sh
+                """
+                subprocess.run(install_script, shell=True, check=True)
+                return True
+                
+            elif system == "linux":
+                print("Installing Ollama for Linux...")
+                install_script = """
+                curl -fsSL https://ollama.ai/install.sh -o install.sh
+                chmod +x install.sh
+                sudo ./install.sh
+                rm install.sh
+                """
+                subprocess.run(install_script, shell=True, check=True)
+                return True
+                
+            elif system == "windows":
+                print("For Windows, please install Ollama manually from: https://ollama.ai/download")
+                return False
+                
+            else:
+                print(f"Unsupported operating system: {system}")
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            print(f"Error installing Ollama: {e}")
+            return False
+
+    def ensure_ollama_installed(self) -> bool:
+        """Ensure Ollama is installed, install if necessary."""
+        if not self.is_ollama_installed():
+            print("Ollama is not installed. Attempting to install...")
+            if self.install_ollama():
+                print("Ollama installed successfully!")
+                return True
+            else:
+                print("Failed to install Ollama automatically.")
+                return False
+        return True
+
     def are_models_pulled(self) -> bool:
+        """Check if required models are pulled."""
         return self.models_pulled
 
     def pull_models(self) -> None:
+        """Pull required models."""
         try:
             for model in [self.summary_model, self.translation_model]:
                 print(f"Pulling model: {model}")
@@ -41,19 +99,32 @@ class OllamaService:
 
     def start_server(self) -> None:
         """Start the Ollama server in the background."""
-        self.process = subprocess.Popen(["ollama", "serve"])
-        time.sleep(2)  # Wait for server to start
-        print("Ollama server is running in the background")
-
-    def pull_models(self) -> None:
-        """Pull required models from Ollama."""
-        for model in [self.summary_model, self.translation_model]:
-            print(f"Pulling model: {model}")
+        if not self.ensure_ollama_installed():
+            raise RuntimeError("Ollama is not installed and could not be installed automatically.")
+            
+        try:
+            # Check if server is already running
             try:
-                subprocess.run(["ollama", "pull", model], check=True)
-                time.sleep(1)
-            except subprocess.CalledProcessError as e:
-                print(f"Error pulling model {model}: {e}")
+                requests.get("http://localhost:11434/api/tags")
+                print("Ollama server is already running")
+                return
+            except requests.exceptions.ConnectionError:
+                pass
+
+            # Start server if not running
+            self.process = subprocess.Popen(["ollama", "serve"])
+            time.sleep(2)  # Wait for server to start
+            print("Ollama server started successfully")
+            
+            # Verify server is responding
+            try:
+                requests.get("http://localhost:11434/api/tags")
+            except requests.exceptions.ConnectionError:
+                raise RuntimeError("Ollama server failed to start properly")
+                
+        except Exception as e:
+            print(f"Error starting Ollama server: {e}")
+            raise
 
     def get_completion(
         self,
@@ -62,15 +133,7 @@ class OllamaService:
         model: Optional[str] = None,
         json_mode: bool = False,
     ) -> Union[str, dict]:
-        """
-        Generate completion using Ollama API.
-
-        Args:
-            prompt (str): User prompt
-            system_message (str): System context message
-            model (str): Model to use, defaults to translation model
-            json_mode (bool): Whether to return raw JSON response
-        """
+        """Generate completion using Ollama API."""
         if model is None:
             model = self.translation_model
 
@@ -97,13 +160,7 @@ class OllamaService:
             return None
 
     def summarize(self, content: str, prompt_sum: str) -> Optional[str]:
-        """
-        Summarize content using the summary model.
-
-        Args:
-            content (str): Content to summarize
-            prompt_sum (str): Summarization prompt template
-        """
+        """Summarize content using the summary model."""
         headers = {"Content-Type": "application/json"}
         data = {
             "model": self.summary_model,
@@ -137,16 +194,7 @@ class OllamaService:
         country: str = "",
         max_tokens: Optional[int] = None
     ) -> str:
-        """
-        Translate text using the translation model.
-
-        Args:
-            source_lang (str): Source language
-            target_lang (str): Target language
-            source_text (str): Text to translate
-            country (str): Target country for localization
-            max_tokens (int): Maximum tokens per request
-        """
+        """Translate text using the translation model."""
         if max_tokens is None:
             max_tokens = self.max_tokens
 
