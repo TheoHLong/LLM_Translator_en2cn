@@ -4,7 +4,7 @@ Services package for document translation and processing.
 
 from .document_parser import DocumentParser
 from .translation_service import TranslationService, TranslationConfig
-from .content_summarizer import ContentSummarizer, SummaryConfig
+from .summarizer import ContentSummarizer, SummaryConfig
 
 __all__ = [
     'DocumentParser',
