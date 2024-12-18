@@ -175,16 +175,13 @@ class ContentSummarizer:
             if s_text is None:
                 s_text = " "
 
-            # Translate the content
-            if stone_mode == '信息提取':
-                t_text = translator.fast_translate(s_text)
-            elif element.name not in head_types:
-                t_text = translator.translate(
-                    source_lang=source_lang,
-                    target_lang=target_lang,
-                    source_text=s_text,
-                    country=country
-                )
+            # Translate the content using standard translation
+            t_text = translator.translate(
+                source_lang=source_lang,
+                target_lang=target_lang,
+                source_text=s_text,
+                country=country
+            )
 
             if t_text is None:
                 t_text = " "
@@ -278,7 +275,12 @@ class ContentSummarizer:
 
             # Translate if chunk is long enough
             if len(processed_text) >= 5:
-                translated_text = translator.fast_translate(processed_text)
+                translated_text = translator.translate(
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    source_text=processed_text,
+                    country=country
+                )
                 
                 # Display results
                 if info.user_agent.is_pc:
@@ -317,7 +319,12 @@ class ContentSummarizer:
                 chunks = self.text_processor.parse_merge(text)
                 for chunk in chunks:
                     if len(chunk) >= 5:
-                        translated_text = translator.fast_translate(chunk)
+                        translated_text = translator.translate(
+                            source_lang='English',
+                            target_lang='Chinese',
+                            source_text=chunk,
+                            country='China'
+                        )
                         output.put_row([
                             output.put_text(chunk),
                             None,

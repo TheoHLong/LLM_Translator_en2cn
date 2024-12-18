@@ -31,16 +31,6 @@ class TranslationService:
         self.config = config or TranslationConfig()
         self.text_processor = TextPreprocessor()
 
-    # Need to add this method
-    def fast_translate(self, text: str) -> str:
-        """Quick translation fallback using Google Translate."""
-        try:
-            translator = GoogleTranslator(source='auto', target='zh-CN')
-            return translator.translate(text)
-        except Exception as e:
-            print(f"Fast translation error: {e}")
-            return text
-
     def translate(
         self,
         source_lang: str,
@@ -62,6 +52,9 @@ class TranslationService:
         Returns:
             str: Translated text
         """
+        if not source_text or len(source_text.strip()) == 0:
+            return ""
+            
         try:
             preprocessed_text = self.text_processor.preprocess(source_text)
             translated_text = self._translate_with_ollama(
@@ -74,6 +67,13 @@ class TranslationService:
             return self.text_processor.postprocess(translated_text)
         except Exception as e:
             print(f"Translation error: {e}")
+            # Fallback to Google Translate
+            try:
+                translator = GoogleTranslator(source='auto', target='zh-CN')
+                return translator.translate(source_text)
+            except Exception as e:
+                print(f"Fallback translation error: {e}")
+                return source_text
 
     def _translate_with_ollama(
         self,
@@ -115,23 +115,23 @@ class TranslationService:
         country: str
     ) -> str:
         """Execute three-step translation process for single chunk."""
-        # Initial translation
+        # Step 1: Initial translation
         translation_1 = self._get_initial_translation(source_lang, target_lang, source_text)
+        if not translation_1:
+            raise Exception("Initial translation failed")
         
-        # Get expert reflection
+        # Step 2: Get expert reflection on quality and improvement areas
         reflection = self._get_translation_reflection(
             source_lang, target_lang, source_text, translation_1, country
         )
-
-
+        if not reflection:
+            return translation_1
         
-        
-        # Generate improved translation
+        # Step 3: Generate improved translation based on expert feedback
         translation_2 = self._get_improved_translation(
             source_lang, target_lang, source_text, translation_1, reflection
         )
-        
-        return translation_2
+        return translation_2 if translation_2 else translation_1
 
     def _multi_chunk_translation(
         self,
@@ -184,7 +184,8 @@ class TranslationService:
                 data=json.dumps(data)
             )
             response.raise_for_status()
-            return response.json().get('response', '')
+            result = response.json().get('response', '')
+            return result if result and len(result.strip()) > 0 else None
         except Exception as e:
             print(f"Completion error: {e}")
             return None
@@ -196,15 +197,26 @@ class TranslationService:
         source_text: str
     ) -> str:
         """Generate initial translation."""
-        system_message = f"You are an expert linguist, specializing in translation from {source_lang} to {target_lang}."
+        system_message = f"""You are an expert linguist and professional translator, specializing in {source_lang} to {target_lang} translation.
+Your goal is to provide accurate, natural, and high-quality translations."""
         
-        prompt = f"""This is a {source_lang} to {target_lang} translation. Provide only the {target_lang} translation:
-{source_lang}: {source_text}
+        prompt = f"""Please translate this {source_lang} text into {target_lang}.
+Focus on accuracy and natural expression in the target language.
 
-{target_lang}:"""
+{source_lang} text:
+{source_text}
 
-        translation = self._get_completion(prompt, system_message)
-        return translation if translation else self.fast_translate(source_text)
+{target_lang} translation:"""
+
+        result = self._get_completion(prompt, system_message)
+        if not result:
+            # Fallback to Google Translate for initial translation
+            try:
+                translator = GoogleTranslator(source='auto', target='zh-CN')
+                result = translator.translate(source_text)
+            except:
+                result = source_text
+        return result
 
     def _get_translation_reflection(
         self,
@@ -215,29 +227,30 @@ class TranslationService:
         country: str
     ) -> str:
         """Generate reflection on initial translation."""
-        system_message = f"You are an expert linguist specializing in translation from {source_lang} to {target_lang}."
+        system_message = f"""You are an expert linguist and translation reviewer, specializing in {source_lang} to {target_lang} translation quality assessment.
+Your task is to provide detailed, constructive feedback for improving translations."""
         
-        country_context = f"The final style should match {target_lang} colloquially spoken in {country}. " if country else ""
+        country_context = f"The translation should match {target_lang} as used in {country}. " if country else ""
         
-        prompt = f"""Your task is to carefully read a source text and a translation from {source_lang} to {target_lang}, and then give constructive criticism and helpful suggestions to improve the translation. \
-{country_specific}
+        prompt = f"""Analyze this translation from {source_lang} to {target_lang} and provide specific improvement suggestions.
+{country_context}
 
-Source Text:
+Source text:
 {source_text}
 
-Translation:
+Current translation:
 {translation}
 
-Please analyze the translation and provide specific suggestions for improving:
-1. Accuracy (fixing mistranslations, omissions)
-2. Fluency (grammar, natural flow)
-3. Style (maintaining the source text style and cultural context)
-4. Terminology (consistency and appropriate idioms)
+Focus your analysis on:
+1. Accuracy - Are there any mistranslations or omissions?
+2. Natural expression - Does it sound natural in {target_lang}?
+3. Cultural appropriateness - Is it culturally appropriate for {country if country else target_lang} readers?
+4. Terminology consistency
+5. Style and tone
 
-Provide only the specific suggestions for improvements."""
+Provide specific suggestions for improvement:"""
 
-        reflection = self._get_completion(prompt, system_message)
-        return reflection if reflection else ""
+        return self._get_completion(prompt, system_message) or ""
 
     def _get_improved_translation(
         self,
@@ -248,23 +261,24 @@ Provide only the specific suggestions for improvements."""
         reflection: str
     ) -> str:
         """Generate improved translation based on reflection."""
-        system_message = f"You are an expert linguist, specializing in translation editing from {source_lang} to {target_lang}."
+        system_message = f"""You are an expert translator and editor, specializing in {source_lang} to {target_lang} translation refinement.
+Your task is to improve the translation based on expert feedback while maintaining accuracy and natural expression."""
         
-        prompt = f"""Improve this translation based on the expert suggestions:
+        prompt = f"""Improve this translation based on the expert feedback provided.
 
-Source ({source_lang}):
+Source text ({source_lang}):
 {source_text}
 
-Initial Translation:
+Current translation:
 {translation}
 
-Expert Suggestions:
+Expert feedback and suggestions:
 {reflection}
 
-Provide only the improved translation, no explanations."""
+Provide the improved translation:"""
 
-        improved = self._get_completion(prompt, system_message)
-        return improved if improved else translation
+        result = self._get_completion(prompt, system_message)
+        return result if result else translation
 
     def _count_tokens(self, text: str, encoding_name: str = "cl100k_base") -> int:
         """Count tokens in text using specified encoding."""
@@ -279,6 +293,7 @@ Provide only the improved translation, no explanations."""
         num_chunks = (token_count + token_limit - 1) // token_limit
         chunk_size = token_count // num_chunks
 
+        # Distribute remaining tokens
         remaining_tokens = token_count % token_limit
         if remaining_tokens > 0:
             chunk_size += remaining_tokens // num_chunks
@@ -310,11 +325,19 @@ Provide only the improved translation, no explanations."""
         Returns:
             str: Text in English
         """
-        lang_type = self.detect_language(text)
-        if lang_type != 'en':
-            translator = GoogleTranslator(source='auto', target='en')
-            text = translator.translate(text)
-        return text
+        try:
+            lang_type = self.detect_language(text)
+            if lang_type != 'en':
+                return self.translate(
+                    source_lang=lang_type,
+                    target_lang='English',
+                    source_text=text,
+                    country='United States'
+                )
+            return text
+        except Exception as e:
+            print(f"Error translating to English: {e}")
+            return text
 
     def detect_and_translate_to_chinese(self, text: str) -> str:
         """
@@ -326,9 +349,16 @@ Provide only the improved translation, no explanations."""
         Returns:
             str: Text in Chinese
         """
-        lang_des = "zh-CN"
-        lang_type = self.detect_language(text)
-        if lang_type != lang_des:
-            translator = GoogleTranslator(source='auto', target='zh-CN')
-            text = translator.translate(text)
-        return text
+        try:
+            lang_type = self.detect_language(text)
+            if lang_type != 'zh-cn':
+                return self.translate(
+                    source_lang=lang_type,
+                    target_lang='Chinese',
+                    source_text=text,
+                    country='China'
+                )
+            return text
+        except Exception as e:
+            print(f"Error translating to Chinese: {e}")
+            return text
