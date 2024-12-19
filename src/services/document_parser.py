@@ -192,7 +192,8 @@ class DocumentParser:
                     'header', 'title', 'meta', 'div.app__signup-form',
                     'div.text-center', 'div.paper__head div',
                     'footer.app__footer', 'script', 'form',
-                    '.page__description', '.home__icon'
+                    '.page__description', '.home__icon',
+                    'ul.paper__meta'
                 ]
 
                 for removals_name in removals_names:
