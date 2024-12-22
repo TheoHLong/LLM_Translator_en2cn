@@ -1,6 +1,6 @@
-# Local LLM Translator using Ollama (English to Chinese)
+# LLM Translator (English to Chinese)
 
-本地大语言模型翻译（英汉）
+LLM翻译（英汉）
 
 A web-based application that uses LLMs (Large Language Models) to translate and summarize documents from English to Chinese. Supports multiple file formats including PDF, DOCX, TXT.
 
@@ -98,3 +98,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Ollama for providing the local LLM capability
 - PyWebIO for the web interface framework
 - This project was inspired by and incorporates code from Andrew Ng's translation agent (https://github.com/andrewyng/translation-agent)
+- PDF processing utilizes the Allen Institute's Paper-to-HTML conversion tool (https://papertohtml.org/)
