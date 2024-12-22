@@ -1,15 +1,19 @@
 # LLM Translator (English to Chinese)
 
-A web-based application that uses LLMs (Large Language Models) to translate and summarize documents from English to Chinese. Supports multiple file formats including PDF, DOCX, TXT, and HTML.
+LLM翻译（英汉）
+
+A web-based application that uses LLMs (Large Language Models) to translate and summarize documents from English to Chinese. Supports multiple file formats including PDF, DOCX, TXT.
+
+一个基于网络的应用程序，使用LLMs （大型语言模型）将文档从英语翻译和总结为中文。支持多种文件格式，包括 PDF、DOCX、TXT 。
 
 ## Features
 
 - Document translation from English to Chinese
 - Document summarization
-- Support for multiple file formats (PDF, DOCX, TXT, HTML)
+- Support for multiple file formats (PDF, DOCX, TXT)
+- PDF format is for academic papers specifically 
 - Web-based interface using PyWebIO
 - Uses Ollama for local LLM processing
-- Metadata extraction for academic papers
 
 ## Prerequisites
 
