@@ -1,6 +1,6 @@
-# LLM Translator (English to Chinese)
+# LLM Translator using Ollama (English to Chinese)
 
-LLM翻译（英汉）
+Ollama LLM翻译（英汉）
 
 A web-based application that uses LLMs (Large Language Models) to translate and summarize documents from English to Chinese. Supports multiple file formats including PDF, DOCX, TXT.
 
