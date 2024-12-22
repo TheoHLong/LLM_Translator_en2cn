@@ -5,16 +5,12 @@ import sys
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(root_dir)
 
-import re
 from typing import Optional, Dict, Any
 from pywebio.input import *
 from pywebio.output import *
-from pywebio import config
+from pywebio import config, start_server
 from pywebio.session import hold, set_env, run_js, info
-import logging
-from pywebio.platform.aiohttp import start_server
 import time
-from tqdm import tqdm
 
 # Import our modules
 from models.ollama import OllamaService  
@@ -31,7 +27,7 @@ from services import (
     PROCESSING_MODES
 )
 
-@config(title="石头网络")
+@config(theme="minty", title="Document Translation & Summary System / 文档翻译与总结系统")
 def start_app():
     """Main application entry point."""
     app = DocumentTranslatorApp()
@@ -63,7 +59,6 @@ class DocumentTranslatorApp:
             'country': 'China'
         }
         
-        # Additional language configuration for HTML content
         self.html_language_config = {
             'in_lang': 'en',
             'out_lang': 'zh',
@@ -72,56 +67,163 @@ class DocumentTranslatorApp:
 
     def start(self):
         """Start the web application."""
-        # Display header information
-        self._display_header()
+        # Add custom styles
+        put_html('''
+            <style>
+            .container {
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 2em;
+                padding: 2em;
+                background: #f8f9fa;
+                border-radius: 10px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .section {
+                background: #ffffff;
+                padding: 1.5em;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                margin-bottom: 1.5em;
+            }
+            .feature-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1em;
+                margin: 1em 0;
+            }
+            .feature-item {
+                padding: 1em;
+                background: #ffffff;
+                border-radius: 8px;
+                text-align: center;
+            }
+            .status {
+                padding: 1em;
+                margin: 1em 0;
+                border-radius: 4px;
+            }
+            .text-black {
+                color: #000000 !important;
+            }
+            .subtitle {
+                color: #000000;
+                font-size: 1.1em;
+                margin: 0.5em 0;
+            }
+            .success { background-color: #d4edda; color: #000000; }
+            .error { background-color: #f8d7da; color: #000000; }
+            .warning { background-color: #fff3cd; color: #000000; }
+            .processing { background-color: #e2e3e5; color: #000000; }
 
-        # Get processing mode from user
+            /* Add these new styles for making output text black */
+            .markdown-body {
+                color: #000000 !important;
+            }
+            .markdown-body p,
+            .markdown-body h1,
+            .markdown-body h2,
+            .markdown-body h3,
+            .markdown-body h4,
+            .markdown-body h5,
+            .markdown-body h6,
+            .markdown-body span,
+            .markdown-body div {
+                color: #000000 !important;
+            }
+            /* Make output text black */
+            .webio-text-output {
+                color: #000000 !important;
+            }
+            pre, code {
+                color: #000000 !important;
+            }
+            /* Force output content to be black */
+            [data-scope="content"] * {
+                color: #000000 !important;
+            }
+            </style>
+        ''')
+
+        # Header Section
+        # put_html('<div class="header">')
+        put_html('<h1 class="text-black">Document Translation & Summary System using LLM<br></h1>')
+        put_html('''
+                 
+
+                 
+        ''')
+        
+        # Feature Grid
+        put_html('''
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <h3 class="text-black">📝 Content Extraction<br>内容提取</h3>
+                </div>
+                <div class="feature-item">
+                    <h3 class="text-black">🔄 Real-time Translation<br>实时翻译</h3>
+                </div>
+            </div>
+        ''')
+
+        # Mode Selection Section
+        put_html('<div class="section">')
         stone_mode = self._get_processing_mode()
+        put_html('</div>')
 
-        # Handle file upload
+        # File Upload Section
+        put_html('<div class="section">')
+        put_markdown('### File Upload / 上传文件')
         file = self._get_file_upload()
+        put_html('</div>')
+
         if not file:
             return
 
         # Process the file
         self._process_file(file, stone_mode)
+        
+        put_html('</div>')  # Close container
 
-    def _display_header(self):
-        """Display application header and introduction."""
-        put_markdown('## EXTRACT: summary of each passage/总结文章段落')
-        put_markdown('## TRANSLATE: Translate each passage/翻译文章段落')
+    def _display_status(self, message: str, status: str = 'info'):
+        """Display status message with appropriate styling."""
+        style = f'status {status}'
+        put_html(f'<div class="{style}">{message}</div>')
 
     def _get_processing_mode(self) -> str:
         """Get processing mode from user input."""
-        return radio("Choose Reading Mode：",
-                    [PROCESSING_MODES['EXTRACT'], PROCESSING_MODES['TRANSLATE']],
-                    inline=True,
-                    required=True,
-                    value=PROCESSING_MODES['EXTRACT'],
-                    help_text='',
-                    )
+        return radio(
+            "Select Processing Mode / 请选择处理模式：",
+            [
+                {'label': '📑 Content Extraction / 内容提取', 'value': PROCESSING_MODES['EXTRACT']},
+                {'label': '🔄 Document Translation / 文档翻译', 'value': PROCESSING_MODES['TRANSLATE']}
+            ],
+            inline=True,
+            required=True,
+            value=PROCESSING_MODES['EXTRACT']
+        )
 
     def _get_file_upload(self) -> Optional[Dict]:
         """Handle file upload from user."""
         return file_upload(
-            label='Upload File',
+            label='Select File to Process / 选择要处理的文件',
             accept=['.pdf', '.docx', '.txt'],
             max_size='100M',
             multiple=False,
-            placeholder='.pdf'
+            placeholder='Support PDF, Word, TXT / 支持 PDF、Word、TXT 格式',
+            help_text='Maximum file size: 100MB / 最大支持100MB的文件上传'
         )
 
     def _process_file(self, file: Dict[str, Any], stone_mode: str):
-        """
-        Process uploaded file based on its type and mode.
-        
-        Args:
-            file (dict): Uploaded file information
-            stone_mode (str): Processing mode selected by user
-        """
+        """Process uploaded file based on its type and mode."""
         try:
             # Save uploaded file
             file_path = self.file_handler.save_file(file)
+            self._display_status('File upload successful! / 文件上传成功！', 'success')
 
             if file['mime_type'] == 'application/pdf':
                 self._process_pdf(file_path, stone_mode)
@@ -132,35 +234,32 @@ class DocumentTranslatorApp:
             elif file['mime_type'] == 'text/plain':
                 self._process_text(file_path, stone_mode)
             else:
-                put_warning("File format error.")
+                self._display_status('Unsupported file format / 不支持的文件格式', 'error')
+
         except Exception as e:
-            put_error(f"处理文件时出错: {str(e)}")
+            self._display_status(f"Error processing file / 处理文件时出错: {str(e)}", 'error')
         finally:
-            # Clean up temporary files
             self.file_handler.clean_up_temp_files()
 
     def _process_pdf(self, file_path: str, stone_mode: str):
         """Process PDF file."""
         # Try to get paper metadata first
-        put_info('主要内容：')
-        with put_loading(shape='border', color='info'):
-            metadata = self.doc_parser.get_document_metadata(file_path)
-            if metadata:
-                self.summarizer.process_paper_metadata(metadata, self.translator)
+        self._display_status('Extracting document information... / 正在提取文档信息...', 'processing')
+        
+        put_loading()
+        metadata = self.doc_parser.get_document_metadata(file_path)
+        if metadata:
+            self.summarizer.process_paper_metadata(metadata, self.translator)
 
         # Process PDF content
-        if info.user_agent.is_pc:
-            put_info('PDF内容提取中 ...  (新上传的论文约3分钟，请保持网页连接，一段时间后再回来) / (曾上传过的论文约20秒)')
-        else:
-            put_info('PDF内容提取中 ...  (新上传的论文约3分钟，注意保持连接，浏览器后台运行可能会自动断开连接) / (曾上传过的论文约20秒)')
+        status_msg = 'Processing PDF content... (First time takes about 3 minutes) / 正在处理PDF内容...(首次处理约需3分钟)'
+        self._display_status(status_msg, 'processing')
 
-        with put_loading(shape='border', color='info'):
-            soup, metadata = self.doc_parser.parse_pdf(file_path)
+        put_loading()
+        soup, metadata = self.doc_parser.parse_pdf(file_path)
 
-        if stone_mode == PROCESSING_MODES['EXTRACT']:
-            put_success('信息提取中 ...  ')
-        else:
-            put_success('实时翻译中 ...  ')
+        proc_msg = 'Extracting information... / 正在提取信息...' if stone_mode == PROCESSING_MODES['EXTRACT'] else 'Translating content... / 正在翻译内容...'
+        self._display_status(proc_msg, 'processing')
 
         self.summarizer.process_html_content(
             soup=soup,
@@ -169,12 +268,14 @@ class DocumentTranslatorApp:
             translator=self.translator
         )
 
-        put_success("Done")
+        self._display_status('Processing complete! / 处理完成！', 'success')
 
     def _process_html(self, file_path: str, stone_mode: str):
         """Process HTML file."""
-        with put_loading(shape='border', color='info'):
-            soup = self.doc_parser.parse_html_file(file_path)
+        self._display_status('Processing HTML content... / 正在处理HTML内容...', 'processing')
+        
+        put_loading()
+        soup = self.doc_parser.parse_html_file(file_path)
 
         self.summarizer.process_html_content(
             soup=soup,
@@ -182,35 +283,42 @@ class DocumentTranslatorApp:
             stone_mode=stone_mode,
             translator=self.translator
         )
-        put_success("Done")
+        
+        self._display_status('Processing complete! / 处理完成！', 'success')
 
     def _process_docx(self, file_path: str, stone_mode: str):
         """Process DOCX file."""
-        with put_loading(shape='border', color='info'):
-            soup = self.doc_parser.parse_docx(file_path)
+        self._display_status('Processing Word document... / 正在处理Word文档...', 'processing')
+        
+        put_loading()
+        soup = self.doc_parser.parse_docx(file_path)
 
-        put_success('实时翻译中 ...  ')
+        self._display_status('Translating content... / 正在翻译内容...', 'processing')
         self.summarizer.process_html_content(
             soup=soup,
             **self.html_language_config,
             stone_mode=stone_mode,
             translator=self.translator
         )
-        put_success("Done")
+        
+        self._display_status('Processing complete! / 处理完成！', 'success')
 
     def _process_text(self, file_path: str, stone_mode: str):
         """Process text file."""
-        with put_loading(shape='border', color='info'):
-            with open(file_path) as f:
-                text = f.read()
+        self._display_status('Processing text file... / 正在处理文本文件...', 'processing')
+        
+        put_loading()
+        with open(file_path) as f:
+            text = f.read()
 
         self.summarizer.process_text_content(
             text=text,
             stone_mode=stone_mode,
             translator=self.translator,
-            **self.language_config  # Using base language config without in_lang/out_lang
+            **self.language_config
         )
-        put_success("翻译完成")
+        
+        self._display_status('Processing complete! / 处理完成！', 'success')
 
 def main():
     try:
@@ -221,7 +329,7 @@ def main():
 
         # Initialize models
         if not ollama.are_models_pulled():
-            print(f"Pulling required models...")
+            print("Pulling required models...")
             ollama.pull_models()
 
         # Start the server
