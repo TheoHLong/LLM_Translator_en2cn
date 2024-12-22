@@ -97,3 +97,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Ollama for providing the local LLM capability
 - PyWebIO for the web interface framework
+- This project was inspired by and incorporates code from Andrew Ng's translation agent (https://github.com/andrewyng/translation-agent)
