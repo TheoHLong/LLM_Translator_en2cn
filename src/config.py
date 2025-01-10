@@ -1,6 +1,7 @@
 import os
-from typing import Dict, Any
-from dataclasses import dataclass
+import string
+from typing import Dict, Any, Tuple
+from dataclasses import dataclass, field
 from pathlib import Path
 
 @dataclass
@@ -27,17 +28,15 @@ class FileConfig:
     UPLOAD_FOLDER: str = "temp"
     MAX_CONTENT_LENGTH: int = 100 * 1024 * 1024  # 100MB
     ALLOWED_EXTENSIONS: tuple = ('.pdf', '.docx', '.txt', '.html')
-    MIME_TYPES: Dict[str, str] = None
+    MIME_TYPES: Dict[str, str] = field(default_factory=lambda: {
+        'pdf': 'application/pdf',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'doc': 'application/msword',
+        'txt': 'text/plain',
+        'html': 'text/html',
+    })
 
     def __post_init__(self):
-        self.MIME_TYPES = {
-            'pdf': 'application/pdf',
-            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'doc': 'application/msword',
-            'txt': 'text/plain',
-            'html': 'text/html',
-        }
-        
         # Create upload folder if it doesn't exist
         os.makedirs(os.path.join(os.getcwd(), self.UPLOAD_FOLDER), exist_ok=True)
 
@@ -48,6 +47,7 @@ class TextConfig:
     MIN_CHARS_PER_CHUNK: int = 5
     DEFAULT_ENCODING: str = 'utf-8'
     SUMMARY_MIN_LENGTH: int = 200
+    DEFAULT_CHUNK_SIZE: int = 500  # Added this to match usage in services
     TITLE_MAX_WORDS: int = 20
     TITLE_MAX_CHARS: int = 200
     TITLE_MIN_CHARS: int = 6
@@ -65,8 +65,6 @@ class TranslationConfig:
     TARGET_LANG_FULL: str = 'Chinese'
     TARGET_COUNTRY: str = 'China'
     FALLBACK_ENGINE: str = 'google'
-    
-    # Translation prompts
     DEFAULT_TRANSLATION_PROMPT: str = "忠实且自然地把下面内容翻译成中文，并只输出翻译后的文字："
     REFLECTION_PROMPT: str = """Analyze this translation and provide specific improvement suggestions focusing on:
 1. Accuracy (fixing mistranslations, omissions)
@@ -80,8 +78,6 @@ class SummaryConfig:
     MIN_LENGTH_FOR_SUMMARY: int = 300
     DEFAULT_CHUNK_SIZE: int = 500
     PROCESSING_DELAY: int = 2
-    
-    # Summary prompts
     DEFAULT_SUMMARY_PROMPT: str = """
     Summarize the passage in one clear and intuitive paragraph, focusing on the central theme 
     and essential details without using introductory phrases.
@@ -98,22 +94,80 @@ class WebConfig:
     RECONNECT_TIMEOUT: int = 5 * 60
     MAX_MSG_SIZE: int = 0
     REMOTE_ACCESS: bool = True
+
+@dataclass
+class DocumentParserConfig:
+    """Configuration settings for document parsing."""
+    # Semantic Scholar API settings
+    S2_API_KEY: str = ''  # Removed sensitive key
+    S2_API_URL: str = 'https://partner.semanticscholar.org/graph/v1'
     
-    # Google Analytics
-    GA_TRACKING_ID: str = "G-SMSZ6XKZNN"
-    GA_JS_URL: str = "https://www.googletagmanager.com/gtag/js"
+    # WebDriver settings
+    WEBDRIVER_OPTIONS: Tuple[str, ...] = (
+        '--headless',
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--window-size=1920,1080'
+    )
+    WEBDRIVER_EXCLUDED_SWITCHES: Tuple[str, ...] = (
+        'enable-logging',
+        'enable-automation'
+    )
+    WEBDRIVER_IMPLICIT_WAIT: int = 2
+    WEBDRIVER_PAGE_LOAD_WAIT: int = 2
+
+    # HTML cleaning settings
+    HTML_ELEMENTS_TO_REMOVE: Tuple[str, ...] = (
+        'header', 'meta', 'script', '[document]',
+        'noscript', 'head', 'input'
+    )
     
-    # Custom JavaScript
-    CUSTOM_JS: str = """
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-SMSZ6XKZNN');
-    """
+    # PDF conversion settings
+    PDF_TO_HTML_URL: str = 'https://papertohtml.org/'
+    PDF_UPLOAD_WAIT: int = 3
+    PDF_CONVERSION_WAIT: int = 90
+    PDF_ELEMENTS_TO_REMOVE: Tuple[str, ...] = (
+        'header', 'title', 'meta', 'div.app__signup-form',
+        'div.text-center', 'div.paper__head div',
+        'footer.app__footer', 'script', 'form',
+        '.page__description', '.home__icon',
+        'ul.paper__meta', 'div.paper__toc.card'
+    )
+
+@dataclass
+class TextProcessingConfig:
+    """Configuration settings for text processing."""
+    # Character limits
+    MIN_CHARS: int = 6
+    MAX_WORDS: int = 20
+    MAX_CHARS: int = MAX_WORDS * 10
+    
+    # Processing settings
+    TOLERANCE: float = 1e-06
+    DEFAULT_CHUNK_SIZE: int = 4700
+    
+    # PDF title extraction settings
+    TITLE_REGEX_PATTERNS: Tuple[str, ...] = (
+        r'^[0-9 \t-]+(abstract|introduction)?\s+$',
+        r'^(abstract|unknown|title|untitled):?$',
+        r'paper\s+title|technical\s+report|proceedings|preprint|to\s+appear|submission',
+        r'(integrated|international).*conference|transactions\s+on|symposium\s+on|downloaded\s+from\s+http'
+    )
+    
+    # PDF text extraction settings
+    PDF_ENCODING: str = 'utf-8'
+    VALID_CHARS: str = "-_.() %s%s" % (string.ascii_letters, string.digits)
+
+    # Title cleaning patterns
+    TITLE_CLEAN_PATTERNS: Dict[str, str] = field(default_factory=lambda: {
+        r',': ' ',
+        r': ': ' - ',
+        r'\.pdf(\.pdf)*$': '',
+        r'[ \t][ \t]*': ' '
+    })
 
 class Config:
     """Main configuration class that combines all config components."""
-    
     def __init__(self):
         self.base = BaseConfig()
         self.ollama = OllamaConfig()
@@ -122,8 +176,8 @@ class Config:
         self.translation = TranslationConfig()
         self.summary = SummaryConfig()
         self.web = WebConfig()
-        
-        # Processing modes
+        self.document_parser = DocumentParserConfig()
+        self.text_processing = TextProcessingConfig()
         self.PROCESSING_MODES = {
             'EXTRACT': '信息提取',
             'TRANSLATE': '自然翻译'
@@ -140,23 +194,10 @@ class Config:
             'remote_access': self.web.REMOTE_ACCESS,
         }
 
-    def get_google_analytics_code(self) -> str:
-        """Get Google Analytics initialization code."""
-        return f"""
-        <script async src="{self.web.GA_JS_URL}?id={self.web.GA_TRACKING_ID}"></script>
-        <script>
-            {self.web.CUSTOM_JS}
-        </script>
-        """
-
     @property
     def upload_path(self) -> Path:
         """Get the full path to the upload directory."""
         return Path(os.getcwd()) / self.file.UPLOAD_FOLDER
 
-def load_config() -> Config:
-    """Load and return configuration based on environment."""
-    return Config()
-
 # Create global config instance
-config = load_config()
+config = Config()

@@ -11,18 +11,16 @@ from pywebio.output import (
     put_processbar, put_markdown,
     put_html, set_processbar
 )
+from config import config
 
 @dataclass
 class SummaryConfig:
     """Configuration settings for summarization."""
-    model_name: str = "llama3.2"
-    chunk_size: int = 500
-    delay: int = 2
-    base_url: str = "http://localhost:11434/api/generate"
-    default_prompt: str = """
-    Summarize the passage in one clear and intuitive paragraph, focusing on the central theme 
-    and essential details without using introductory phrases.
-    """
+    model_name: str = config.ollama.SUMMARY_MODEL
+    chunk_size: int = config.text.DEFAULT_CHUNK_SIZE
+    delay: int = config.summary.PROCESSING_DELAY
+    base_url: str = config.ollama.BASE_URL
+    default_prompt: str = config.summary.DEFAULT_SUMMARY_PROMPT
 
 class ContentSummarizer:
     """Handles text and document summarization using Ollama LLM."""
@@ -102,7 +100,7 @@ class ContentSummarizer:
         """
         put_processbar('bar')
 
-        delay_sent = 1
+        delay_sent = config.summary.PROCESSING_DELAY
         try:
             contents = soup.find_all([
                 'p', 'figure', 'figcaption',
@@ -155,7 +153,7 @@ class ContentSummarizer:
             return
 
         text = element.get_text()
-        if len(text) <= 10:
+        if len(text) <= config.text.MIN_CHARS_PER_CHUNK:
             return
 
         chunks = self.text_processor.parse_merge(text)
@@ -165,7 +163,7 @@ class ContentSummarizer:
         for chunk in chunks:
             head_types = ["h1", "h2", "h3"]
             
-            if (element.name not in head_types) and (stone_mode == '信息提取') and (len(chunk) > 300):
+            if (element.name not in head_types) and (stone_mode == '信息提取') and (len(chunk) > config.text.SUMMARY_MIN_LENGTH):
                 # Summarize long non-header content
                 s_text = self.summarize_text(chunk)
                 time.sleep(0.5)
@@ -257,7 +255,7 @@ class ContentSummarizer:
         output.put_processbar('bar')
         
         # Determine chunk size based on mode
-        chunk_size = 500 if stone_mode == '信息提取' else 600
+        chunk_size = config.text.DEFAULT_CHUNK_SIZE if stone_mode == '信息提取' else 600
         chunks = self.text_processor.parse_merge_txt(text, chunk_size)
         
         for i, chunk in enumerate(tqdm(chunks)):
@@ -265,7 +263,7 @@ class ContentSummarizer:
             output.set_processbar('bar', (i + 1) / len(chunks))
             
             # Process chunk based on mode and length
-            if (stone_mode == '信息提取') and (len(chunk) > 200):
+            if (stone_mode == '信息提取') and (len(chunk) > config.text.SUMMARY_MIN_LENGTH):
                 try:
                     processed_text = self.summarize_text(chunk)
                 except:
@@ -274,7 +272,7 @@ class ContentSummarizer:
                 processed_text = chunk
 
             # Translate if chunk is long enough
-            if len(processed_text) >= 5:
+            if len(processed_text) >= config.text.MIN_CHARS_PER_CHUNK:
                 translated_text = translator.translate(
                     source_lang=source_lang,
                     target_lang=target_lang,
@@ -318,12 +316,12 @@ class ContentSummarizer:
                 text = metadata['tldr']
                 chunks = self.text_processor.parse_merge(text)
                 for chunk in chunks:
-                    if len(chunk) >= 5:
+                    if len(chunk) >= config.text.MIN_CHARS_PER_CHUNK:
                         translated_text = translator.translate(
-                            source_lang='English',
-                            target_lang='Chinese',
+                            source_lang=config.translation.SOURCE_LANG_FULL,
+                            target_lang=config.translation.TARGET_LANG_FULL,
                             source_text=chunk,
-                            country='China'
+                            country=config.translation.TARGET_COUNTRY
                         )
                         output.put_row([
                             output.put_text(chunk),

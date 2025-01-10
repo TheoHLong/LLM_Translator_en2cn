@@ -9,15 +9,16 @@ from langdetect import detect
 import time
 from tqdm import tqdm
 from models.text_processing import TextPreprocessor
+from config import config
 
 @dataclass
 class TranslationConfig:
     """Configuration settings for translation."""
-    max_tokens: int = 4700  # Maximum tokens per chunk
-    model_name: str = "wangshenzhi/gemma2-9b-chinese-chat"  # Model for translation
-    summary_model: str = "llama3.2"  # Model for summarization
-    base_url: str = "http://localhost:11434/api/generate"
-    fallback_engine: str = "google"
+    max_tokens: int = config.text.MAX_TOKENS_PER_CHUNK  # Maximum tokens per chunk
+    model_name: str = config.ollama.TRANSLATION_MODEL  # Model for translation
+    summary_model: str = config.ollama.SUMMARY_MODEL  # Model for summarization
+    base_url: str = config.ollama.BASE_URL
+    fallback_engine: str = config.translation.FALLBACK_ENGINE
     delay_seconds: float = 0.5  # Delay between API calls
 
 class TranslationService:
@@ -89,83 +90,6 @@ class TranslationService:
             print(f"Translation error: {e}")
             return source_text
 
-    def summarize(self, text: str, language: str = "English", output_lang: str = "Chinese") -> str:
-        """
-        Process text: Original -> language Summary -> language Rephrase -> output_lang Translation.
-        All steps use Ollama for high quality.
-        
-        Args:
-            text (str): Text to summarize
-            language (str): Source language of the text
-            output_lang (str): Desired output language
-            
-        Returns:
-            str: Processed and translated text
-        """
-        try:
-            # 1. Get summary in original language
-            summary_prompt = (
-                f"Summarize the following {language} passage in one clear and intuitive paragraph, "
-                f"focusing on the central theme and essential details. Respond in {language}. "
-                "Do not use any introductory phrases: "
-            )
-            
-            preprocessed_text = self.text_processor.preprocess(text)
-            language_summary = self._get_completion(
-                prompt=summary_prompt + preprocessed_text,
-                system_message=f"You are an expert at summarizing {language} text.",
-                model=self.config.summary_model
-            )
-            
-            if not language_summary:
-                return text
-
-            # 2. Rephrase summary in original language
-            rephrase_prompt = (
-                f"Please rephrase the following {language} summary to be more clear, natural, "
-                f"and engaging while maintaining all key information. Respond in {language}."
-                "Do not use any introductory phrases: "
-                f"{language_summary}"
-            )
-            
-            language_rephrased = self._get_completion(
-                prompt=rephrase_prompt,
-                system_message=f"You are an expert at clear and engaging {language} writing.",
-                model=self.config.summary_model
-            )
-
-            # Use the rephrased version if successful, otherwise use original summary
-            final_text = language_rephrased if language_rephrased else language_summary
-
-            # 3. Translate to output language using Ollama if languages differ
-            if language.lower() != output_lang.lower():
-                translated_text = self._translate_with_ollama(
-                    source_lang=language,
-                    target_lang=output_lang,
-                    source_text=final_text,
-                    country="",  # Not needed for this case
-                    max_tokens=self.config.max_tokens
-                )
-                return self.text_processor.postprocess(translated_text)
-            
-            return self.text_processor.postprocess(final_text)
-
-        except Exception as e:
-            print(f"Processing error: {e}")
-            if language.lower() != output_lang.lower():
-                # Try direct translation as fallback
-                try:
-                    return self._translate_with_ollama(
-                        source_lang=language,
-                        target_lang=output_lang,
-                        source_text=text,
-                        country="",
-                        max_tokens=self.config.max_tokens
-                    )
-                except:
-                    return text
-            return text
-
     def _translate_with_ollama(
         self,
         source_lang: str,
@@ -179,7 +103,7 @@ class TranslationService:
         
         if num_tokens < max_tokens:
             # Single chunk translation
-            return self._single_chunk_translation(
+            return self._three_step_chunk_translation(
                 source_lang, target_lang, source_text, country
             )
         else:
@@ -189,6 +113,178 @@ class TranslationService:
                 source_lang, target_lang, chunks, country
             )
             return "".join(translations)
+
+    def _three_step_chunk_translation(
+        self,
+        source_lang: str,
+        target_lang: str,
+        source_text: str,
+        country: str
+    ) -> str:
+        """Execute three-step translation process for a single chunk."""
+        # Step 1: Initial translation
+        initial_translation = self._initial_translation(source_lang, target_lang, source_text)
+        if not initial_translation:
+            return source_text
+            
+        # Step 2: Get expert reflection
+        reflection = self._get_translation_reflection(
+            source_lang, target_lang, source_text, initial_translation, country
+        )
+        if not reflection:
+            return initial_translation
+            
+        # Step 3: Improved translation
+        final_translation = self._improve_translation(
+            source_lang, target_lang, source_text, initial_translation, reflection
+        )
+        
+        return final_translation if final_translation else initial_translation
+
+    def _initial_translation(
+        self,
+        source_lang: str,
+        target_lang: str,
+        source_text: str
+    ) -> str:
+        """Execute initial translation step."""
+        system_message = f"You are an expert linguist, specializing in translation from {source_lang} to {target_lang}."
+        
+        prompt = f"""This is a {source_lang} to {target_lang} translation. Please provide the {target_lang} translation for this text. \
+Do not provide any explanations or text apart from the translation.
+
+{source_lang}: {source_text}
+
+{target_lang}:"""
+
+        result = self._get_completion(prompt, system_message)
+        return result if result else source_text
+
+    def _get_translation_reflection(
+        self,
+        source_lang: str,
+        target_lang: str,
+        source_text: str,
+        translation: str,
+        country: str
+    ) -> Optional[str]:
+        """Get expert reflection on translation quality."""
+        system_message = f"You are an expert linguist specializing in translation from {source_lang} to {target_lang}."
+        
+        base_prompt = f"""Your task is to carefully read a source text and a translation from {source_lang} to {target_lang}, and then give constructive criticism and helpful suggestions to improve the translation.
+
+<SOURCE_TEXT>
+{source_text}
+</SOURCE_TEXT>
+
+<TRANSLATION>
+{translation}
+</TRANSLATION>
+
+When writing suggestions, pay attention to whether there are ways to improve the translation's:
+(i) accuracy (by correcting errors of addition, mistranslation, omission, or untranslated text),
+(ii) fluency (by applying {target_lang} grammar, spelling and punctuation rules, and ensuring there are no unnecessary repetitions),
+(iii) style (by ensuring the translations reflect the style of the source text and takes into account any cultural context),
+(iv) terminology (by ensuring terminology use is consistent and reflects the source text domain; and by ensuring you use equivalent idioms in {target_lang}).
+
+Write a list of specific, helpful and constructive suggestions for improving the translation.
+Each suggestion should address one specific part of the translation.
+Output only the suggestions and nothing else."""
+
+        if country:
+            base_prompt = f"""Your task is to carefully read a source text and a translation from {source_lang} to {target_lang}, and then give constructive criticism and helpful suggestions to improve the translation. \
+The final style and tone of the translation should match the style of {target_lang} colloquially spoken in {country}.
+
+<SOURCE_TEXT>
+{source_text}
+</SOURCE_TEXT>
+
+<TRANSLATION>
+{translation}
+</TRANSLATION>
+
+When writing suggestions, pay attention to whether there are ways to improve the translation's:
+(i) accuracy (by correcting errors of addition, mistranslation, omission, or untranslated text),
+(ii) fluency (by applying {target_lang} grammar, spelling and punctuation rules, and ensuring there are no unnecessary repetitions),
+(iii) style (by ensuring the translations reflect the style of the source text and takes into account any cultural context),
+(iv) terminology (by ensuring terminology use is consistent and reflects the source text domain; and by ensuring you use equivalent idioms in {target_lang}).
+
+Write a list of specific, helpful and constructive suggestions for improving the translation.
+Each suggestion should address one specific part of the translation.
+Output only the suggestions and nothing else."""
+
+        return self._get_completion(base_prompt, system_message)
+
+    def _improve_translation(
+        self,
+        source_lang: str,
+        target_lang: str,
+        source_text: str,
+        translation: str,
+        reflection: str
+    ) -> Optional[str]:
+        """Improve translation based on expert reflection."""
+        system_message = f"You are an expert linguist, specializing in translation editing from {source_lang} to {target_lang}."
+        
+        prompt = f"""Your task is to carefully read, then edit, a translation from {source_lang} to {target_lang}, taking into
+account a list of expert suggestions and constructive criticisms.
+
+<SOURCE_TEXT>
+{source_text}
+</SOURCE_TEXT>
+
+<TRANSLATION>
+{translation}
+</TRANSLATION>
+
+<EXPERT_SUGGESTIONS>
+{reflection}
+</EXPERT_SUGGESTIONS>
+
+Please take into account the expert suggestions when editing the translation. Edit the translation by ensuring:
+
+(i) accuracy (by correcting errors of addition, mistranslation, omission, or untranslated text),
+(ii) fluency (by applying {target_lang} grammar, spelling and punctuation rules and ensuring there are no unnecessary repetitions),
+(iii) style (by ensuring the translations reflect the style of the source text)
+(iv) terminology (inappropriate for context, inconsistent use), or
+(v) other errors.
+
+Output only the new translation and nothing else."""
+
+        result = self._get_completion(prompt, system_message)
+        return result if result else translation
+
+    def _translate_chunks(
+        self,
+        source_lang: str,
+        target_lang: str,
+        chunks: List[str],
+        country: str
+    ) -> List[str]:
+        """Translate multiple chunks using three-step process while maintaining consistency."""
+        translated_chunks = []
+        context = ""  # Store previous translations for context
+
+        for i, chunk in enumerate(chunks):
+            # Add context from previous translation
+            context_prompt = f"Previous translation context: {context}\n\n" if context else ""
+            
+            translation = self._three_step_chunk_translation(
+                source_lang,
+                target_lang,
+                chunk,
+                country
+            )
+            
+            translated_chunks.append(translation)
+            
+            # Update context with the latest translation
+            context = translation if i == len(chunks) - 2 else ""
+            
+            # Add delay to avoid rate limiting
+            time.sleep(self.config.delay_seconds)
+
+        return translated_chunks
 
     def _get_completion(
         self,
@@ -233,65 +329,6 @@ class TranslationService:
 
         return splitter.split_text(text)
 
-    def _translate_chunks(
-        self,
-        source_lang: str,
-        target_lang: str,
-        chunks: List[str],
-        country: str
-    ) -> List[str]:
-        """Translate multiple chunks while maintaining consistency."""
-        translated_chunks = []
-        context = ""  # Store previous translations for context
-
-        for i, chunk in enumerate(chunks):
-            # Add context from previous translation
-            context_prompt = f"Previous translation context: {context}\n\n" if context else ""
-            
-            translation = self._single_chunk_translation(
-                source_lang,
-                target_lang,
-                chunk,
-                country,
-                context_prompt
-            )
-            
-            translated_chunks.append(translation)
-            
-            # Update context with the latest translation
-            context = translation if i == len(chunks) - 2 else ""
-            
-            # Add delay to avoid rate limiting
-            time.sleep(self.config.delay_seconds)
-
-        return translated_chunks
-
-    def _single_chunk_translation(
-        self,
-        source_lang: str,
-        target_lang: str,
-        source_text: str,
-        country: str,
-        context: str = ""
-    ) -> str:
-        """Execute translation process for single chunk."""
-        system_message = f"You are an expert linguist and professional translator, specializing in {source_lang} to {target_lang} translation."
-        
-        # Add country-specific context if provided
-        if country:
-            system_message += f" Your translations should be appropriate for {target_lang} speakers in {country}."
-
-        prompt = f"""{context}Translate this text from {source_lang} to {target_lang}.
-Focus on accuracy and natural expression.
-
-Source text:
-{source_text}
-
-Translation:"""
-
-        result = self._get_completion(prompt, system_message)
-        return result if result else source_text
-
     def _count_tokens(self, text: str, encoding_name: str = "cl100k_base") -> int:
         """Count tokens in text using specified encoding."""
         encoding = tiktoken.get_encoding(encoding_name)
@@ -318,3 +355,80 @@ Translation:"""
             return detect(text)
         except:
             return 'en'
+
+    def summarize(self, text: str, language: str = "English", output_lang: str = "Chinese") -> str:
+        """
+        Process text: Original -> language Summary -> language Rephrase -> output_lang Translation.
+        All steps use Ollama for high quality.
+        
+        Args:
+            text (str): Text to summarize
+            language (str): Source language of the text
+            output_lang (str): Desired output language
+            
+        Returns:
+            str: Processed and translated text
+        """
+        try:
+            # 1. Get summary in original language
+            summary_prompt = (
+                f"Summarize the following {language} passage in one clear and intuitive paragraph, "
+                f"focusing on the central theme and essential details. Respond in {language}. "
+                "Do not use any introductory phrases: "
+            )
+            
+            preprocessed_text = self.text_processor.preprocess(text)
+            language_summary = self._get_completion(
+                prompt=summary_prompt + preprocessed_text,
+                system_message=f"You are an expert at summarizing {language} text.",
+                model=self.config.summary_model
+            )
+            
+            if not language_summary:
+                return text
+
+            # 2. Rephrase summary in original language
+            rephrase_prompt = (
+                f"Please rephrase the following {language} summary to be more clear, natural, "
+                f"and engaging while maintaining all key information. Respond in {language}. "
+                "Do not use any introductory phrases: "
+                f"{language_summary}"
+            )
+            
+            language_rephrased = self._get_completion(
+                prompt=rephrase_prompt,
+                system_message=f"You are an expert at clear and engaging {language} writing.",
+                model=self.config.summary_model
+            )
+
+            # Use the rephrased version if successful, otherwise use original summary
+            final_text = language_rephrased if language_rephrased else language_summary
+
+            # 3. Translate to output language using Ollama if languages differ
+            if language.lower() != output_lang.lower():
+                translated_text = self._translate_with_ollama(
+                    source_lang=language,
+                    target_lang=output_lang,
+                    source_text=final_text,
+                    country="",  # Not needed for this case
+                    max_tokens=self.config.max_tokens
+                )
+                return self.text_processor.postprocess(translated_text)
+            
+            return self.text_processor.postprocess(final_text)
+
+        except Exception as e:
+            print(f"Processing error: {e}")
+            if language.lower() != output_lang.lower():
+                # Try direct translation as fallback
+                try:
+                    return self._translate_with_ollama(
+                        source_lang=language,
+                        target_lang=output_lang,
+                        source_text=text,
+                        country="",
+                        max_tokens=self.config.max_tokens
+                    )
+                except:
+                    return text
+            return text

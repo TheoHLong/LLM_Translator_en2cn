@@ -8,18 +8,20 @@ from typing import Optional, Union, Dict, Any, List
 from tqdm import tqdm
 import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from config import config
 
 class OllamaService:
     """Handles all Ollama-related operations including translation and summarization."""
     
     def __init__(self):
-        self.summary_model = "llama3.2"
-        self.translation_model = "wangshenzhi/gemma2-9b-chinese-chat"
-        self.max_tokens = 4700
-        self.base_url = "http://localhost:11434/api/generate"
+        self.summary_model = config.ollama.SUMMARY_MODEL
+        self.translation_model = config.ollama.TRANSLATION_MODEL
+        self.max_tokens = config.ollama.MAX_TOKENS
+        self.base_url = config.ollama.BASE_URL
         self.models_pulled = False
         self.process = None
 
+    # Rest of the class implementation remains the same
     def is_ollama_installed(self) -> bool:
         """Check if Ollama is installed."""
         try:
@@ -105,7 +107,7 @@ class OllamaService:
         try:
             # Check if server is already running
             try:
-                requests.get("http://localhost:11434/api/tags")
+                requests.get(f"{self.base_url}/tags")
                 print("Ollama server is already running")
                 return
             except requests.exceptions.ConnectionError:
@@ -118,7 +120,7 @@ class OllamaService:
             
             # Verify server is responding
             try:
-                requests.get("http://localhost:11434/api/tags")
+                requests.get(f"{self.base_url}/tags")
             except requests.exceptions.ConnectionError:
                 raise RuntimeError("Ollama server failed to start properly")
                 

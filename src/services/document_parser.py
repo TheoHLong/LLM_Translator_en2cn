@@ -12,42 +12,22 @@ import validators
 from validators import ValidationFailure
 import mammoth
 import codecs
-from semanticscholar import SemanticScholar
+from config import config
 
 class DocumentParser:
     """Handles all document parsing operations including PDF, DOCX, and URL content."""
 
-    def __init__(self, semantic_scholar_key: Optional[str] = None):
-        """
-        Initialize DocumentParser with optional Semantic Scholar API key.
-        
-        Args:
-            semantic_scholar_key (str, optional): API key for Semantic Scholar
-        """
-        self.s2_api_key = semantic_scholar_key or 'o2MSPjUJ9pxdefSoGbe570y6aCcR6rI1adw0Y6G5'
-        self.s2_api_url = 'https://partner.semanticscholar.org/graph/v1'
-        self.sch = SemanticScholar(api_key=self.s2_api_key, api_url=self.s2_api_url)
-
-    def get_document_metadata(self, file_path: str) -> Optional[Dict[str, Any]]:
-        """
-        Public method to get document metadata from a PDF file.
-        
-        Args:
-            file_path (str): Path to PDF file
-            
-        Returns:
-            Optional[Dict[str, Any]]: Document metadata if found, None otherwise
-        """
-        return self._get_paper_metadata(file_path)
+    def __init__(self):
+        """Initialize DocumentParser."""
+        pass
 
     def init_selenium_driver(self) -> webdriver.Chrome:
         """Initialize Selenium WebDriver with appropriate options."""
         options = webdriver.ChromeOptions()
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--window-size=1920,1080')
-        options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        for option in config.document_parser.WEBDRIVER_OPTIONS:
+            options.add_argument(option)
+        options.add_experimental_option('excludeSwitches', 
+                                      config.document_parser.WEBDRIVER_EXCLUDED_SWITCHES)
         return webdriver.Chrome(options=options)
 
     def quit_driver_and_cleanup(self, driver: webdriver.Chrome) -> None:
@@ -65,7 +45,7 @@ class DocumentParser:
         except ChildProcessError:
             pass
 
-    def save_uploaded_file(self, file: Dict[str, Any], dir_name: str = 'temp') -> str:
+    def save_uploaded_file(self, file: Dict[str, Any], dir_name: str = config.file.UPLOAD_FOLDER) -> str:
         """
         Save uploaded file to temporary directory.
         
@@ -105,19 +85,15 @@ class DocumentParser:
         driver = None
         try:
             driver = self.init_selenium_driver()
-            driver.implicitly_wait(2)
+            driver.implicitly_wait(config.document_parser.WEBDRIVER_IMPLICIT_WAIT)
             driver.get(url)
             page = driver.page_source
             soup = BeautifulSoup(page, 'html.parser')
 
             # Remove unnecessary elements
-            removals_names = [
-                'header', 'meta', 'script', '[document]',
-                'noscript', 'head', 'input',
-            ]
-            for removals_name in removals_names:
-                removal = soup.select(removals_name)
-                for item in removal:
+            for element_name in config.document_parser.HTML_ELEMENTS_TO_REMOVE:
+                elements = soup.select(element_name)
+                for item in elements:
                     item.decompose()
 
             return soup
@@ -142,63 +118,52 @@ class DocumentParser:
         finally:
             os.remove(file_path)
 
-    def parse_pdf(self, file_path: str) -> Tuple[BeautifulSoup, Optional[Dict[str, Any]]]:
+    def parse_pdf(self, file_path: str) -> Tuple[BeautifulSoup, None]:
         """
-        Parse PDF file into BeautifulSoup object and extract metadata.
+        Parse PDF file into BeautifulSoup object.
         
         Args: 
             file_path (str): Path to PDF file
             
         Returns:
-            Tuple[BeautifulSoup, dict]: Tuple of (parsed content, metadata)
+            Tuple[BeautifulSoup, None]: Tuple of (parsed content, None)
         """
         driver = None
         try:
-            # Try to get paper metadata first
-            metadata = self._get_paper_metadata(file_path)
-            
-            # Convert PDF to HTML
-            url_pdf = 'https://papertohtml.org/'
             driver = self.init_selenium_driver()
             
-            driver.get(url_pdf)
-            WebDriverWait(driver, 3).until(
+            driver.get(config.document_parser.PDF_TO_HTML_URL)
+            WebDriverWait(driver, config.document_parser.PDF_UPLOAD_WAIT).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, '.home__upload-input'))
             )
             file_area = driver.find_element(By.CSS_SELECTOR, '.home__upload-input')
             file_area.send_keys(file_path)
 
-            WebDriverWait(driver, 3).until(
+            WebDriverWait(driver, config.document_parser.PDF_UPLOAD_WAIT).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'button'))
             )
             driver.find_element(By.CSS_SELECTOR, 'button').click()
 
             # Wait for conversion
             try:
-                WebDriverWait(driver, 90).until(EC.url_changes(url_pdf))
+                WebDriverWait(driver, config.document_parser.PDF_CONVERSION_WAIT).until(
+                    EC.url_changes(config.document_parser.PDF_TO_HTML_URL)
+                )
                 
                 # Additional wait for page load
                 for _ in range(20):
                     page_state = driver.execute_script('return document.readyState;')
                     if page_state == 'complete':
                         break
-                    time.sleep(.5)
+                    time.sleep(config.document_parser.WEBDRIVER_PAGE_LOAD_WAIT)
                 
                 html = driver.page_source
                 soup = BeautifulSoup(html, 'html.parser')
                 
-                # Clean up the HTML
-                removals_names = [
-                    'header', 'title', 'meta', 'div.app__signup-form',
-                    'div.text-center', 'div.paper__head div',
-                    'footer.app__footer', 'script', 'form',
-                    '.page__description', '.home__icon',
-                    'ul.paper__meta','div.paper__toc.card'
-                ]
-
-                for removals_name in removals_names:
-                    removal = soup.select(removals_name)
-                    for item in removal:
+                # Clean up the HTML using configured elements to remove
+                for element_selector in config.document_parser.PDF_ELEMENTS_TO_REMOVE:
+                    elements = soup.select(element_selector)
+                    for item in elements:
                         item.decompose()
 
                 # Handle navigation section
@@ -208,15 +173,14 @@ class DocumentParser:
                         a.replaceWithChildren()
 
                 # Add necessary meta tags
-                metatag_a = soup.new_tag("meta", charset="utf-8")
+                metatag_a = soup.new_tag("meta", charset=config.text.DEFAULT_ENCODING)
                 metatag_b = soup.new_tag('meta')
                 metatag_b.attrs['content'] = "width=device-width,initial-scale=1,shrink-to-fit=no"
                 metatag_b.attrs['name'] = "viewport"
                 soup.head.append(metatag_a)
                 soup.head.append(metatag_b)
 
-                return soup, metadata
-                
+                return soup, None
 
             except TimeoutException:
                 raise Exception("PDF conversion timeout")
@@ -230,7 +194,6 @@ class DocumentParser:
             except:
                 pass
 
-
     def parse_html_file(self, file_path: str) -> BeautifulSoup:
         """
         Parse HTML file into BeautifulSoup object.
@@ -241,49 +204,10 @@ class DocumentParser:
         Returns:
             BeautifulSoup: Parsed HTML content
         """
-        with codecs.open(file_path, "r", "utf-8") as html_file:
+        with codecs.open(file_path, "r", config.text.DEFAULT_ENCODING) as html_file:
             return BeautifulSoup(html_file.read(), 'html.parser')
 
-    def _get_paper_metadata(self, pdf_path: str) -> Optional[Dict[str, Any]]:
-        """
-        Extract paper metadata using PDF title and Semantic Scholar.
-        
-        Args:
-            pdf_path (str): Path to PDF file
-            
-        Returns:
-            dict: Paper metadata if found
-        """
-        try:
-            # Get PDF title using the title extractor from text_processing
-            from models.text_processing import TextPreprocessor
-            text_processor = TextPreprocessor()
-            paper_title = text_processor.get_pdf_title(pdf_path)
-
-            # Search Semantic Scholar
-            results = self.sch.search_paper(paper_title)
-            if not results:
-                return None
-
-            paper_doi = results[0]['externalIds'].get('DOI')
-            if not paper_doi:
-                return None
-
-            paper = self.sch.paper(paper_doi)
-            return {
-                'title': paper['title'],
-                'tldr': paper.get('tldr', {}).get('text'),
-                'doi': paper_doi,
-                'abstract': paper.get('abstract'),
-                'year': paper.get('year'),
-                'authors': [author['name'] for author in paper.get('authors', [])]
-            }
-
-        except Exception as e:
-            print(f"Error getting paper metadata: {e}")
-            return None
-
-    def parse_document(self, file: Dict[str, Any]) -> Tuple[BeautifulSoup, Optional[Dict[str, Any]]]:
+    def parse_document(self, file: Dict[str, Any]) -> Tuple[BeautifulSoup, None]:
         """
         Main entry point for parsing any document type.
         
@@ -291,17 +215,17 @@ class DocumentParser:
             file (dict): File data dictionary with 'mime_type' and content
             
         Returns:
-            Tuple[BeautifulSoup, dict]: Tuple of (parsed content, metadata)
+            Tuple[BeautifulSoup, None]: Tuple of (parsed content, None)
         """
         file_path = self.save_uploaded_file(file)
         
-        if file['mime_type'] == 'application/pdf':
+        if file['mime_type'] == config.file.MIME_TYPES['pdf']:
             return self.parse_pdf(file_path)
             
-        elif file['mime_type'] == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        elif file['mime_type'] == config.file.MIME_TYPES['docx']:
             return self.parse_docx(file_path), None
             
-        elif file['mime_type'] == 'text/html':
+        elif file['mime_type'] == config.file.MIME_TYPES['html']:
             return self.parse_html_file(file_path), None
             
         else:
@@ -318,7 +242,7 @@ class DocumentParser:
             str: Extracted text content
         """
         # Remove script and style elements
-        for script in soup(["script", "style"]):
+        for script in soup(config.text.HTML_ELEMENTS_TO_REMOVE[:2]):  # Just script and style
             script.decompose()
 
         # Extract text

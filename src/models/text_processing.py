@@ -20,16 +20,13 @@ from pdfminer.converter import PDFPageAggregator
 from pdfminer.layout import LAParams, LTChar, LTFigure, LTTextBox, LTTextLine
 import string
 import unidecode
+from config import config
 
 class TextPreprocessor:
     """Handles all text preprocessing operations including file parsing and text chunking."""
     
     def __init__(self):
         self.placeholder_map: Dict[str, str] = {}
-        self.MIN_CHARS = 6
-        self.MAX_WORDS = 20
-        self.MAX_CHARS = self.MAX_WORDS * 10
-        self.TOLERANCE = 1e-06
 
     def generate_placeholder(self) -> str:
         """Generate a unique placeholder for text substitution."""
@@ -62,8 +59,11 @@ class TextPreprocessor:
             text = text.replace(placeholder, original)
         return text
 
-    def parse_merge(self, texts: str, n: int = 4700) -> List[str]:
+    def parse_merge(self, texts: str, n: int = None) -> List[str]:
         """Split text by periods into chunks of specified size."""
+        if n is None:
+            n = config.text_processing.DEFAULT_CHUNK_SIZE
+            
         sentences = []
         sentence = ""
         for i in texts.split("."):
@@ -74,8 +74,11 @@ class TextPreprocessor:
         sentences.append(sentence)
         return sentences
 
-    def parse_merge_txt(self, texts: str, n: int = 4700) -> List[str]:
+    def parse_merge_txt(self, texts: str, n: int = None) -> List[str]:
         """Split text by newlines into chunks of specified size."""
+        if n is None:
+            n = config.text_processing.DEFAULT_CHUNK_SIZE
+            
         sentences = []
         sentence = ""
         for i in texts.split("\n"):
@@ -89,11 +92,10 @@ class TextPreprocessor:
     def init_driver(self):
         """Initialize Selenium WebDriver with appropriate options."""
         options = webdriver.ChromeOptions()
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--window-size=1920,1080')
-        options.add_experimental_option('excludeSwitches', ['enable-logging', 'enable-automation'])
+        for option in config.document_parser.WEBDRIVER_OPTIONS:
+            options.add_argument(option)
+        options.add_experimental_option('excludeSwitches', 
+                                      config.document_parser.WEBDRIVER_EXCLUDED_SWITCHES)
         driver = webdriver.Chrome(options=options)
         return driver
 
@@ -117,18 +119,14 @@ class TextPreprocessor:
         driver = None
         try:
             driver = self.init_driver()
-            driver.implicitly_wait(2)
+            driver.implicitly_wait(config.document_parser.WEBDRIVER_IMPLICIT_WAIT)
             driver.get(url)
             page = driver.page_source
             soup = BeautifulSoup(page, 'html.parser')
 
-            removals_names = [
-                'header', 'meta', 'script', '[document]',
-                'noscript', 'head', 'input',
-            ]
-            for removals_name in removals_names:
-                removal = soup.select(removals_name)
-                for item in removal:
+            for element_name in config.document_parser.HTML_ELEMENTS_TO_REMOVE:
+                elements = soup.select(element_name)
+                for item in elements:
                     item.decompose()
             return soup
         finally:
@@ -149,41 +147,36 @@ class TextPreprocessor:
         """Extract text from PDF and convert to HTML."""
         driver = None
         try:
-            url_pdf = 'https://papertohtml.org/'
+            url_pdf = config.document_parser.PDF_TO_HTML_URL
             driver = self.init_driver()
             
             # Upload PDF
             driver.get(url_pdf)
-            WebDriverWait(driver, 3).until(
+            WebDriverWait(driver, config.document_parser.PDF_UPLOAD_WAIT).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, '.home__upload-input'))
             )
             file_area = driver.find_element(By.CSS_SELECTOR, '.home__upload-input')
             file_area.send_keys(file_path)
 
             # Transform to HTML
-            WebDriverWait(driver, 3).until(
+            WebDriverWait(driver, config.document_parser.PDF_UPLOAD_WAIT).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'button'))
             )
             driver.find_element(By.CSS_SELECTOR, 'button').click()
 
             # Wait for processing
-            WebDriverWait(driver, 90).until(EC.url_changes(url_pdf))
-            time.sleep(2)  # Additional wait for content
+            WebDriverWait(driver, config.document_parser.PDF_CONVERSION_WAIT).until(
+                EC.url_changes(url_pdf)
+            )
+            time.sleep(config.document_parser.WEBDRIVER_PAGE_LOAD_WAIT)
             
             html = driver.page_source
             soup = BeautifulSoup(html, 'html.parser')
             
             # Clean up the HTML
-            removals_names = [
-                'header', 'title', 'meta', 'div.app__signup-form',
-                'div.text-center', 'div.paper__head div',
-                'footer.app__footer', 'script', 'form',
-                '.page__description', '.home__icon'
-            ]
-
-            for removals_name in removals_names:
-                removal = soup.select(removals_name)
-                for item in removal:
+            for element_selector in config.document_parser.PDF_ELEMENTS_TO_REMOVE:
+                elements = soup.select(element_selector)
+                for item in elements:
                     item.decompose()
 
             return soup
@@ -231,7 +224,7 @@ class TextPreprocessor:
                         largest_text = self._extract_figure_text(lt_obj, largest_text)
                     elif isinstance(lt_obj, (LTTextBox, LTTextLine)):
                         stripped = re.sub(r'[ \t\n]', '', lt_obj.get_text().strip())
-                        if len(stripped) > self.MAX_CHARS * 2:
+                        if len(stripped) > config.text_processing.MAX_CHARS * 2:
                             continue
                         largest_text = self._extract_largest_text(lt_obj, largest_text)
                 break  # Only process first page
@@ -274,18 +267,18 @@ class TextPreprocessor:
 
     def _update_largest_text(self, line: str, y0: float, size: float, largest_text: Dict) -> Dict:
         """Update largest text tracking based on size and position."""
-        if size == largest_text['size'] == 0 and (y0 - largest_text['y0'] < -self.TOLERANCE):
+        if size == largest_text['size'] == 0 and (y0 - largest_text['y0'] < -config.text_processing.TOLERANCE):
             return largest_text
 
         line = re.sub(r'\n$', ' ', line)
 
-        if (size - largest_text['size'] > self.TOLERANCE):
+        if (size - largest_text['size'] > config.text_processing.TOLERANCE):
             largest_text = {
                 'contents': line,
                 'y0': y0,
                 'size': size
             }
-        elif abs(size - largest_text['size']) <= self.TOLERANCE:
+        elif abs(size - largest_text['size']) <= config.text_processing.TOLERANCE:
             largest_text['contents'] = largest_text['contents'] + line
             largest_text['y0'] = y0
 
@@ -293,48 +286,40 @@ class TextPreprocessor:
 
     def _valid_title(self, title: str) -> bool:
         """Check if extracted title is valid."""
-        if not title or len(title.strip()) < self.MIN_CHARS:
+        if not title or len(title.strip()) < config.text_processing.MIN_CHARS:
             return False
             
-        is_placeholder = bool(re.search(
-            r'^[0-9 \t-]+(abstract|introduction)?\s+$|^(abstract|unknown|title|untitled):?$',
-            title.strip().lower()
-        ))
-        
-        is_copyright = bool(re.search(
-            r'paper\s+title|technical\s+report|proceedings|preprint|to\s+appear|submission|'
-            r'(integrated|international).*conference|transactions\s+on|symposium\s+on|downloaded\s+from\s+http',
-            title.lower()
-        ))
+        # Check for placeholder titles using configured patterns
+        for pattern in config.text_processing.TITLE_REGEX_PATTERNS:
+            if re.search(pattern, title.strip().lower()):
+                return False
 
+        # Check if it's mostly non-ASCII
         stripped_ascii = ''.join([c for c in title.strip() if c in string.ascii_letters])
         ascii_length = len(stripped_ascii)
         stripped_chars = re.sub(r'[ \t\n]', '', title.strip())
         chars_length = len(stripped_chars)
         is_serial_number = ascii_length < chars_length / 2
 
-        return not (is_placeholder or is_copyright or is_serial_number)
+        return not is_serial_number
 
     def _sanitize_title(self, title: str) -> str:
         """Clean and format extracted title."""
         # Limit length
         words = title.split(' ')
-        title = ' '.join(words[0:self.MAX_WORDS])
-        if len(title) > self.MAX_CHARS:
-            title = title[0:self.MAX_CHARS]
+        title = ' '.join(words[0:config.text_processing.MAX_WORDS])
+        if len(title) > config.text_processing.MAX_CHARS:
+            title = title[0:config.text_processing.MAX_CHARS]
 
         # Handle special characters
         try:
-            title = unidecode.unidecode(title.encode('utf-8').decode('utf-8'))
+            title = unidecode.unidecode(title.encode(config.text_processing.PDF_ENCODING).decode(config.text_processing.PDF_ENCODING))
         except UnicodeDecodeError:
             pass
 
-        # Clean up formatting
-        title = re.sub(r',', ' ', title)
-        title = re.sub(r': ', ' - ', title)
-        title = re.sub(r'\.pdf(\.pdf)*$', '', title)
-        title = re.sub(r'[ \t][ \t]*', ' ', title)
+        # Apply configured cleaning patterns
+        for pattern, replacement in config.text_processing.TITLE_CLEAN_PATTERNS.items():
+            title = re.sub(pattern, replacement, title)
 
         # Keep only valid characters
-        valid_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
-        return ''.join(c for c in title if c in valid_chars)
+        return ''.join(c for c in title if c in config.text_processing.VALID_CHARS)

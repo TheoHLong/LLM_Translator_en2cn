@@ -243,20 +243,12 @@ class DocumentTranslatorApp:
 
     def _process_pdf(self, file_path: str, stone_mode: str):
         """Process PDF file."""
-        # Try to get paper metadata first
-        self._display_status('Extracting document information... / 正在提取文档信息...', 'processing')
-        
-        put_loading()
-        metadata = self.doc_parser.get_document_metadata(file_path)
-        if metadata:
-            self.summarizer.process_paper_metadata(metadata, self.translator)
-
         # Process PDF content
         status_msg = 'Processing PDF content... (First time takes about 3 minutes) / 正在处理PDF内容...(首次处理约需3分钟)'
         self._display_status(status_msg, 'processing')
 
         put_loading()
-        soup, metadata = self.doc_parser.parse_pdf(file_path)
+        soup, _ = self.doc_parser.parse_pdf(file_path)  # Ignore metadata
 
         proc_msg = 'Extracting information... / 正在提取信息...' if stone_mode == PROCESSING_MODES['EXTRACT'] else 'Translating content... / 正在翻译内容...'
         self._display_status(proc_msg, 'processing')
