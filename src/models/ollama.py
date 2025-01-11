@@ -9,6 +9,7 @@ from tqdm import tqdm
 import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from config import config
+from pywebio.output import put_warning, put_info
 
 class OllamaService:
     """Handles all Ollama-related operations including translation and summarization."""
@@ -138,7 +139,7 @@ class OllamaService:
         """Generate completion using Ollama API."""
         if model is None:
             model = self.translation_model
-
+        
         headers = {"Content-Type": "application/json"}
         data = {
             "model": model,
@@ -150,16 +151,133 @@ class OllamaService:
             response = requests.post(
                 self.base_url,
                 headers=headers,
-                data=json.dumps(data)
+                json=data,
+                stream=True
             )
-            response.raise_for_status()
             
-            if json_mode:
-                return response.json()
-            return response.json().get('response', '')
+            if response.status_code != 200:
+                put_warning(f"API Error {response.status_code}")
+                return None
+
+            # Accumulate the meaningful response chunks
+            chunks = []
+            started_chinese = False
+            current_chinese_segment = []
+            
+            for line in response.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                
+                try:
+                    chunk_data = json.loads(line)
+                    chunk_text = chunk_data.get('response', '')
+                    
+                    # Skip empty chunks
+                    if not chunk_text:
+                        continue
+
+                    # Check if this chunk contains Chinese characters
+                    has_chinese = any('\u4e00' <= char <= '\u9fff' for char in chunk_text)
+                    
+                    if has_chinese:
+                        started_chinese = True
+                        current_chinese_segment.append(chunk_text)
+                    elif started_chinese:
+                        # If we've seen Chinese before and this is punctuation, include it
+                        if any(char in '，。！？、（）[]{}「」：；' for char in chunk_text):
+                            current_chinese_segment.append(chunk_text)
+                        # If we see English after Chinese, it might be a new sentence
+                        elif any(char.isascii() for char in chunk_text):
+                            if current_chinese_segment:
+                                chunks.append(''.join(current_chinese_segment))
+                                current_chinese_segment = []
+                                started_chinese = False
+
+                    if chunk_data.get('done', False):
+                        if current_chinese_segment:
+                            chunks.append(''.join(current_chinese_segment))
+                        break
+                        
+                except json.JSONDecodeError:
+                    continue
+
+            # Take only the first complete Chinese translation
+            if chunks:
+                final_response = chunks[0]
+            else:
+                final_response = ''
+
+            # Clean up any remaining non-Chinese/punctuation characters
+            final_response = ''.join(char for char in final_response 
+                                if '\u4e00' <= char <= '\u9fff'  # Chinese characters
+                                or char in '，。！？、（）[]{}「」：；')  # Chinese punctuation
+            
+            if not final_response:
+                put_warning("Warning: Empty translation result")
+                return None
+                
+            return final_response
+
         except Exception as e:
-            print(f"Error in get_completion: {e}")
+            put_warning(f"Request failed: {str(e)}")
             return None
+
+    # def get_completion(
+    #     self,
+    #     prompt: str,
+    #     system_message: str = "You are a helpful assistant.",
+    #     model: Optional[str] = None,
+    #     json_mode: bool = False,
+    # ) -> Union[str, dict]:
+    #     """Generate completion using Ollama API."""
+    #     if model is None:
+    #         model = self.translation_model
+        
+    #     put_warning(f"Attempting API call to: {self.base_url}")
+        
+    #     headers = {"Content-Type": "application/json"}
+    #     data = {
+    #         "model": model,
+    #         "prompt": f"{system_message}\n{prompt}",
+    #         "stream": False,
+    #     }
+
+    #     try:
+    #         # Log the actual request
+    #         put_info(f"Sending request with model: {model}")
+    #         put_info(f"Headers: {headers}")
+    #         # Don't log the full prompt as it might be too long
+    #         put_info(f"Prompt length: {len(prompt)} chars")
+
+    #         response = requests.post(
+    #             self.base_url,
+    #             headers=headers,
+    #             data=json.dumps(data)
+    #         )
+            
+    #         # Log response details
+    #         put_warning(f"Response status code: {response.status_code}")
+            
+    #         if response.status_code != 200:
+    #             put_warning(f"Error response: {response.text}")
+    #             return None
+                
+    #         response_json = response.json()
+    #         put_info(f"Response keys: {list(response_json.keys())}")
+            
+    #         if json_mode:
+    #             return response_json
+                
+    #         result = response_json.get('response', '')
+    #         put_info(f"Result length: {len(result) if result else 0} chars")
+            
+    #         return result
+    #     except Exception as e:
+    #         put_warning(f"Exception in get_completion: {str(e)}")
+    #         # Log the full exception traceback
+    #         import traceback
+    #         put_warning(f"Traceback: {traceback.format_exc()}")
+    #         return None
 
     def summarize(self, content: str, prompt_sum: str) -> Optional[str]:
         """Summarize content using the summary model."""
@@ -197,19 +315,29 @@ class OllamaService:
         max_tokens: Optional[int] = None
     ) -> str:
         """Translate text using the translation model."""
+        put_info(f"Translation model being used: {self.translation_model}")
         if max_tokens is None:
             max_tokens = self.max_tokens
 
         num_tokens = self._count_tokens(source_text)
+        put_info(f"Input text tokens: {num_tokens}")
 
-        if num_tokens < max_tokens:
-            return self._single_chunk_translation(
-                source_lang, target_lang, source_text, country
-            )
-        else:
-            return self._multi_chunk_translation(
-                source_lang, target_lang, source_text, country, max_tokens
-            )
+        try:  # Add this try-except block
+            if num_tokens < max_tokens:
+                result = self._single_chunk_translation(
+                    source_lang, target_lang, source_text, country
+                )
+            else:
+                result = self._multi_chunk_translation(
+                    source_lang, target_lang, source_text, country, max_tokens
+                )
+            
+            if not result:
+                put_warning("Translation returned None or empty string")
+            return result
+        except Exception as e:
+            put_warning(f"Exception during translation: {str(e)}")
+            raise
 
     def _count_tokens(self, text: str, encoding_name: str = "cl100k_base") -> int:
         """Count the number of tokens in text."""
@@ -261,7 +389,7 @@ class OllamaService:
             translated_chunks.append(translation)
         
         return "".join(translated_chunks)
-
+    
     def _initial_translation(
         self,
         source_lang: str,
@@ -275,7 +403,15 @@ class OllamaService:
 
 {target_lang}:"""
         
-        return self.get_completion(prompt, system_message)
+        put_info(f"Debug - Using model: {self.translation_model}")
+        put_info(f"Debug - Prompt length: {len(prompt)} chars")
+        result = self.get_completion(prompt, system_message)
+        if not result:
+            put_warning("Translation returned empty result")
+        else:
+            put_info(f"Debug - Result length: {len(result)} chars")
+
+        return result
 
     def _reflect_on_translation(
         self,

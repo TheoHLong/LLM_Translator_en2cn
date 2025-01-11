@@ -15,7 +15,7 @@ class BaseConfig:
 class OllamaConfig:
     """Configuration settings for Ollama LLM service."""
     BASE_URL: str = "http://localhost:11434/api/generate"
-    SUMMARY_MODEL: str = "llama3.2"
+    SUMMARY_MODEL: str = "phi4"
     TRANSLATION_MODEL: str = "wangshenzhi/gemma2-9b-chinese-chat"
     MAX_TOKENS: int = 4700
     TIMEOUT: int = 300  # seconds

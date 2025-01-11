@@ -10,9 +10,11 @@ from pywebio.input import *
 from pywebio.output import *
 from pywebio import config, start_server
 from pywebio.session import hold, set_env, run_js, info
+from pywebio.platform import config as pywebio_config  # Fixed this import
 import time
 
 # Import our modules
+from config import config as app_config  # Renamed this import
 from models.ollama import OllamaService  
 from models.text_processing import TextPreprocessor
 from services.translation_service import TranslationService, TranslationConfig
@@ -20,14 +22,9 @@ from services.summarizer import ContentSummarizer, SummaryConfig
 from services.document_parser import DocumentParser
 from utils.file_handlers import FileHandler, FileConfig
 from utils.text_utils import TextUtils, TextConfig
+from services import PROCESSING_MODES
 
-from services import (
-    DEFAULT_TRANSLATION_CONFIG,
-    DEFAULT_SUMMARY_CONFIG,
-    PROCESSING_MODES
-)
-
-@config(theme="minty", title="Document Translation & Summary System / 文档翻译与总结系统")
+@pywebio_config(theme="minty", title="Document Translation & Summary System / 文档翻译与总结系统")
 def start_app():
     """Main application entry point."""
     app = DocumentTranslatorApp()
@@ -39,8 +36,17 @@ class DocumentTranslatorApp:
     def __init__(self):
         """Initialize application components and configurations."""
         # Initialize configurations
-        self.translation_config = TranslationConfig(**DEFAULT_TRANSLATION_CONFIG)
-        self.summary_config = SummaryConfig(**DEFAULT_SUMMARY_CONFIG)
+        self.translation_config = TranslationConfig(
+            max_tokens=app_config.ollama.MAX_TOKENS,
+            model_name=app_config.ollama.TRANSLATION_MODEL,
+            fallback_engine=app_config.translation.FALLBACK_ENGINE
+        )
+        
+        self.summary_config = SummaryConfig(
+            model_name=app_config.ollama.SUMMARY_MODEL,
+            chunk_size=app_config.text.DEFAULT_CHUNK_SIZE,
+            delay=app_config.summary.PROCESSING_DELAY
+        )
         self.file_config = FileConfig()
         self.text_config = TextConfig()
 
