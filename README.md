@@ -25,7 +25,7 @@ A web-based application that uses LLMs (Large Language Models) to translate and 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/LLM_Translator_en2cn.git
+git clone https://github.com/theohlong/LLM_Translator_en2cn.git
 cd LLM_Translator_en2cn
 ```
 
@@ -44,6 +44,7 @@ pip install -r requirements.txt
 Follow instructions at [Ollama's official documentation](https://github.com/ollama/ollama)
 
 ## Usage
+0. Make sure the Ollama app is installed and in running state
 
 1. Start the application:
 ```bash
