@@ -34,6 +34,7 @@ class FileConfig:
         'doc': 'application/msword',
         'txt': 'text/plain',
         'html': 'text/html',
+        'vtt': 'text/vtt',
     })
 
     def __post_init__(self):

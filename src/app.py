@@ -23,6 +23,7 @@ from services.document_parser import DocumentParser
 from utils.file_handlers import FileHandler, FileConfig
 from utils.text_utils import TextUtils, TextConfig
 from services import PROCESSING_MODES
+from utils.vtt_parser import extract_text_from_vtt
 
 @pywebio_config(theme="minty", title="Document Translation & Summary System / 文档翻译与总结系统")
 def start_app():
@@ -217,7 +218,7 @@ class DocumentTranslatorApp:
         """Handle file upload from user."""
         return file_upload(
             label='Select File to Process / 选择要处理的文件',
-            accept=['.pdf', '.docx', '.txt'],
+            accept=['.pdf', '.docx', '.txt', '.vtt'],
             max_size='100M',
             multiple=False,
             placeholder='Support PDF, Word, TXT / 支持 PDF、Word、TXT 格式',
@@ -239,6 +240,8 @@ class DocumentTranslatorApp:
                 self._process_docx(file_path, stone_mode)
             elif file['mime_type'] == 'text/plain':
                 self._process_text(file_path, stone_mode)
+            elif file['mime_type'] == 'text/vtt':
+                self._process_vtt(file_path, stone_mode)
             else:
                 self._display_status('Unsupported file format / 不支持的文件格式', 'error')
 
@@ -297,6 +300,24 @@ class DocumentTranslatorApp:
             **self.html_language_config,
             stone_mode=stone_mode,
             translator=self.translator
+        )
+        
+        self._display_status('Processing complete! / 处理完成！', 'success')
+
+    def _process_vtt(self, file_path: str, stone_mode: str):
+        """Process VTT file like a text file after extracting content."""
+        self._display_status('Processing VTT subtitles... / 正在处理VTT字幕...', 'processing')
+        
+        put_loading()
+        # Extract text from VTT
+        text = extract_text_from_vtt(file_path)
+        
+        # Process just like a text file
+        self.summarizer.process_text_content(
+            text=text,
+            stone_mode=stone_mode,
+            translator=self.translator,
+            **self.language_config
         )
         
         self._display_status('Processing complete! / 处理完成！', 'success')

@@ -13,6 +13,7 @@ from validators import ValidationFailure
 import mammoth
 import codecs
 from config import config
+from utils.vtt_parser import extract_text_from_vtt
 
 class DocumentParser:
     """Handles all document parsing operations including PDF, DOCX, and URL content."""
@@ -256,3 +257,15 @@ class DocumentParser:
         
         # Drop blank lines
         return ' '.join(chunk for chunk in chunks if chunk)
+    
+    def parse_vtt(self, file_path: str) -> BeautifulSoup:
+        """
+        Parse VTT file into BeautifulSoup object.
+        
+        Args:
+            file_path (str): Path to VTT file
+            
+        """
+        extracted_text = extract_text_from_vtt(file_path)
+
+        return extracted_text
