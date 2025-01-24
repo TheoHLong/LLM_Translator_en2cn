@@ -10,6 +10,8 @@ import time
 from tqdm import tqdm
 from models.text_processing import TextPreprocessor
 from config import config
+# import logging
+# logging.basicConfig(level=logging.DEBUG)
 
 @dataclass
 class TranslationConfig:
@@ -19,6 +21,9 @@ class TranslationConfig:
     summary_model: str = config.ollama.SUMMARY_MODEL  # Model for summarization
     base_url: str = config.ollama.BASE_URL
     fallback_engine: str = config.translation.FALLBACK_ENGINE
+    timeout: int = config.ollama.TIMEOUT
+    max_retries: int = config.ollama.RETRY_ATTEMPTS
+    retry_delay: int = config.ollama.RETRY_DELAY
     delay_seconds: float = 0.5  # Delay between API calls
 
 class TranslationService:
@@ -113,6 +118,32 @@ class TranslationService:
                 source_lang, target_lang, chunks, country
             )
             return "".join(translations)
+        
+    def _deepseek_translation(
+        self,
+        source_lang: str,
+        target_lang: str,
+        source_text: str
+    ) -> str:
+        """Execute translation specifically formatted for deepseek models."""
+        system_message = f"""You are a professional translator specializing in {source_lang} to {target_lang} translation. 
+
+When translate, pay attention to these standards:
+(i) accuracy (by correcting errors of addition, mistranslation, omission, or untranslated text),
+(ii) fluency (by applying {target_lang} grammar, spelling and punctuation rules, and ensuring there are no unnecessary repetitions),
+(iii) style (by ensuring the translations reflect the style of the source text and takes into account any cultural context),
+(iv) terminology (by ensuring terminology use is consistent and reflects the source text domain; and by ensuring you use equivalent idioms in {target_lang}).
+
+Output only the new translation and nothing else."""
+        
+        prompt = f"""Please translate the following {source_lang} text to {target_lang}:
+
+{source_lang}: {source_text}
+
+{target_lang}:"""
+
+        result = self._get_completion(prompt, system_message)
+        return result if result else source_text
 
     def _three_step_chunk_translation(
         self,
@@ -122,23 +153,29 @@ class TranslationService:
         country: str
     ) -> str:
         """Execute three-step translation process for a single chunk."""
+
+        if "deepseek" in (self.config.model_name or "").lower():
+            # logging.debug(f"Using deepseek translation for model: {self.config.model_name}")
+            deepseek_translation = self._deepseek_translation(source_lang, target_lang, source_text)
+            return deepseek_translation if deepseek_translation else source_text
+
+        # logging.debug(f"Using three-step translation for model: {self.config.model_name}")
         # Step 1: Initial translation
         initial_translation = self._initial_translation(source_lang, target_lang, source_text)
         if not initial_translation:
             return source_text
-            
+
         # Step 2: Get expert reflection
         reflection = self._get_translation_reflection(
             source_lang, target_lang, source_text, initial_translation, country
         )
         if not reflection:
             return initial_translation
-            
+
         # Step 3: Improved translation
         final_translation = self._improve_translation(
             source_lang, target_lang, source_text, initial_translation, reflection
         )
-        
         return final_translation if final_translation else initial_translation
 
     def _initial_translation(
@@ -290,7 +327,7 @@ Output only the new translation and nothing else."""
         self,
         prompt: str,
         system_message: str = "You are a helpful assistant.",
-        model: Optional[str] = None
+        model: Optional[str] = None,
     ) -> Optional[str]:
         """Get completion from Ollama API."""
         headers = {"Content-Type": "application/json"}
@@ -305,14 +342,39 @@ Output only the new translation and nothing else."""
                 self.config.base_url,
                 headers=headers,
                 data=json.dumps(data),
-                timeout=30
+                timeout=self.config.timeout,
             )
             response.raise_for_status()
             result = response.json().get('response', '')
-            return result if result and len(result.strip()) > 0 else None
+            response_filtled = self.process_response(result)
+            return response_filtled if response_filtled else None
         except Exception as e:
             print(f"Completion error: {e}")
             return None
+        
+    def process_response(self, response_text: str) -> str:
+        """
+        Process response text that may contain thinking process and content.
+        
+        Args:
+            response_text (str): The input text that may contain <think> tags
+            
+        Returns:
+            str: Processed text with only the content portion
+        """
+        if not response_text:
+            return ""
+            
+        try:
+            if "<think>" in response_text and "</think>" in response_text:
+                parts = response_text.split("</think>")
+                if len(parts) >= 2:
+                    return parts[-1].strip()
+            return response_text.strip()
+            
+        except Exception as e:
+            self.logger.error(f"Error processing response: {e}")
+            return response_text
 
     def _split_into_chunks(self, text: str, max_tokens: int) -> List[str]:
         """Split text into optimally sized chunks."""
@@ -372,9 +434,9 @@ Output only the new translation and nothing else."""
         try:
             # 1. Get summary in original language
             summary_prompt = (
-                f"Summarize the following {language} passage in one clear and intuitive paragraph, "
+                f"Summarize the following {language} passage in a clear and intuitive way, "
                 f"focusing on the central theme and essential details. Respond in {language}. "
-                "Do not use any introductory phrases: "
+                "Enter the sentence directly without introductory phrase: "
             )
             
             preprocessed_text = self.text_processor.preprocess(text)
@@ -387,19 +449,19 @@ Output only the new translation and nothing else."""
             if not language_summary:
                 return text
 
-            # 2. Rephrase summary in original language
-            rephrase_prompt = (
-                f"Please rephrase the following {language} summary to be more clear, natural, "
-                f"and engaging while maintaining all key information. Respond in {language}. "
-                "Do not use any introductory phrases: "
-                f"{language_summary}"
-            )
+            # # 2. Rephrase summary in original language
+            # rephrase_prompt = (
+            #     f"Please rephrase the following {language} summary to be more clear, natural, "
+            #     f"and engaging while maintaining all key information. Respond in {language}. "
+            #     "Do not use any introductory phrases: "
+            #     f"{language_summary}"
+            # )
             
-            language_rephrased = self._get_completion(
-                prompt=rephrase_prompt,
-                system_message=f"You are an expert at clear and engaging {language} writing.",
-                model=self.config.summary_model
-            )
+            # language_rephrased = self._get_completion(
+            #     prompt=rephrase_prompt,
+            #     system_message=f"You are an expert at clear and engaging {language} writing.",
+            #     model=self.config.summary_model
+            # )
 
             # Use the rephrased version if successful, otherwise use original summary
             final_text = language_rephrased if language_rephrased else language_summary

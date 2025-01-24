@@ -21,6 +21,9 @@ class SummaryConfig:
     delay: int = config.summary.PROCESSING_DELAY
     base_url: str = config.ollama.BASE_URL
     default_prompt: str = config.summary.DEFAULT_SUMMARY_PROMPT
+    timeout: int = config.ollama.TIMEOUT
+    max_retries: int = config.ollama.RETRY_ATTEMPTS
+    retry_delay: int = config.ollama.RETRY_DELAY
 
 class ContentSummarizer:
     """Handles text and document summarization using Ollama LLM."""
@@ -46,6 +49,10 @@ class ContentSummarizer:
         Returns:
             str: Summarized text
         """
+
+        if not content:
+            raise ValueError("Content cannot be empty or None")
+        
         if not prompt:
             prompt = self.config.default_prompt
 
@@ -56,23 +63,56 @@ class ContentSummarizer:
             "stream": False
         }
 
-        try:
-            response = requests.post(
-                self.config.base_url,
-                headers=headers,
-                data=json.dumps(data)
-            )
-            
-            if response.status_code == 200:
-                response_text = response.text
-                data = json.loads(response_text)
-                return data['response']
-            else:
-                print(f"Error in summarization: {response.status_code}")
+        retries = 0
+        while retries < self.config.max_retries:
+            try:
+                response = requests.post(
+                    self.config.base_url,
+                    headers=headers,
+                    data=json.dumps(data),
+                    timeout=self.config.timeout
+                )
+
+                if response.status_code == 200:
+                    response_text = response.text
+                    data = json.loads(response_text)
+                    response = self.process_response(data['response'])
+                    return response
+                else:
+                    print(f"Error in summarization: {response.status_code}")
+                    return None
+            except Exception as e:
+                retries += 1
+                if retries == self.config.max_retries:
+                    print(f"Maximum retries reached after timeout")
+                    return None
+                print(f"Summarization error: {e}")
+                time.sleep(1)
                 return None
+        
+    def process_response(self, response_text: str) -> str:
+        """
+        Process response text that may contain thinking process and content.
+        
+        Args:
+            response_text (str): The input text that may contain <think> tags
+            
+        Returns:
+            str: Processed text with only the content portion
+        """
+        if not response_text:
+            return ""
+            
+        try:
+            if "<think>" in response_text and "</think>" in response_text:
+                parts = response_text.split("</think>")
+                if len(parts) >= 2:
+                    return parts[-1].strip()
+            return response_text.strip()
+            
         except Exception as e:
-            print(f"Summarization error: {e}")
-            return None
+            self.logger.error(f"Error processing response: {e}")
+            return response_text
 
     def process_html_content(
         self,
