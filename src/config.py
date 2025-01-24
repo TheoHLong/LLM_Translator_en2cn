@@ -15,12 +15,13 @@ class BaseConfig:
 class OllamaConfig:
     """Configuration settings for Ollama LLM service."""
     BASE_URL: str = "http://localhost:11434/api/generate"
-    SUMMARY_MODEL: str = "llama3.2"
-    TRANSLATION_MODEL: str = "wangshenzhi/gemma2-9b-chinese-chat"
+    SUMMARY_MODEL: str = "deepseek-r1"
+    TRANSLATION_MODEL: str = "deepseek-r1"
+    # TRANSLATION_MODEL: str = "wangshenzhi/gemma2-9b-chinese-chat"
     MAX_TOKENS: int = 4700
-    TIMEOUT: int = 300  # seconds
+    TIMEOUT: int = 300  # Increased to 5 minutes
     RETRY_ATTEMPTS: int = 3
-    RETRY_DELAY: int = 1  # seconds
+    RETRY_DELAY: int = 1  # seconds between retries
 
 @dataclass
 class FileConfig:
