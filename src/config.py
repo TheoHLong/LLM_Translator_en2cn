@@ -16,8 +16,8 @@ class OllamaConfig:
     """Configuration settings for Ollama LLM service."""
     BASE_URL: str = "http://localhost:11434/api/generate"
     SUMMARY_MODEL: str = "deepseek-r1"
-    TRANSLATION_MODEL: str = "deepseek-r1"
-    # TRANSLATION_MODEL: str = "wangshenzhi/gemma2-9b-chinese-chat"
+    # TRANSLATION_MODEL: str = "deepseek-r1"
+    TRANSLATION_MODEL: str = "wangshenzhi/gemma2-9b-chinese-chat"
     MAX_TOKENS: int = 4700
     TIMEOUT: int = 300  # Increased to 5 minutes
     RETRY_ATTEMPTS: int = 3
